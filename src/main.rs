@@ -27,6 +27,7 @@ use bevy_inspector_egui::WorldInspectorPlugin;
 mod notes;
 
 fn main() {
+    notes::open_chart("abc");
     let mut app = App::new();    
         app.insert_resource(Msaa { samples: 4});
         app.insert_resource(WindowDescriptor {
@@ -35,10 +36,11 @@ fn main() {
             height: 800.0,
             ..Default::default()
         });
-        app.add_plugins(DefaultPlugins);
+    app.add_plugins(DefaultPlugins);
     app.add_plugin(WorldInspectorPlugin::new());
     app.add_startup_system(camera_setup)
         .add_system(exit_on_esc_system)
+        .add_startup_system(notes::playing_audio)
         .run();
 }
 

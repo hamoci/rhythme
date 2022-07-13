@@ -1,7 +1,11 @@
 use bevy::prelude::*;
+use std::io::prelude::*;
+use std::io::BufReader;
+use std::fs::File;
 
-struct NoteResource {
+pub struct NoteResource {
     judge: Handle<ColorMaterial>,
+    background: Handle<ColorMaterial>,
     note_first: Handle<ColorMaterial>,
     note_second: Handle<ColorMaterial>,
     note_third: Handle<ColorMaterial>,
@@ -14,14 +18,16 @@ impl FromWorld for NoteResource {
         let mut material = world.get_resource_mut::<Assets<ColorMaterial>>().unwrap();
         let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let first_handle = asset_server.load("note_first.png");
-        let second_handle = asset_server.load("note_second.png");
-        let third_handle = asset_server.load("note_third.png");
-        let fourth_handle = asset_server.load("note_fourth.png");
-        let judge_handle = asset_server.load("judge.png");
+        let first_handle = asset_server.load("image/note_first.png");
+        let second_handle = asset_server.load("image/note_second.png");
+        let third_handle = asset_server.load("image/note_third.png");
+        let fourth_handle = asset_server.load("image/note_fourth.png");
+        let judge_handle = asset_server.load("image/judge.png");
+        let background_handle = asset_server.load("image/background.png");
     
 
         NoteResource {
+             background: material.add(background_handle.into()),
              judge: material.add(judge_handle.into()),
              note_first: material.add(first_handle.into()),
              note_second: material.add(second_handle.into()),
@@ -31,26 +37,139 @@ impl FromWorld for NoteResource {
     }
 }
 
-enum Press4Key{
-    First,
-    Second,
-    Third,
-    Fourth,
+pub enum Press4Key{
+    First = 0,
+    Second = 1,
+    Third = 2,
+    Fourth = 3,
 }
 
-enum NoteType{
-    Long,
-    Short,
+pub enum NoteType{
+    Long = 0,
+    Short = 1,
 }
 
 #[derive(Component)]
-struct Note {
+pub struct Note {
     note_type: NoteType,
     press_key: Press4Key,
+    timing: usize,
 }
 
+pub struct SongInfo {
+    name: String,
+    time_length: f32,
+    difficulty: f32,
+}
+
+pub struct PlayingInfo {
+    song_name: String,
+    accuracy: f32,
+    score: usize,
+    current_time: f32,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone, StageLabel)]
+pub enum GameStage {
+    Playing,
+    Select,
+}
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
-//채보는 text파일로 하여 stack이나 vector에 다 때려박으면 될듯
-fn open_chart() {
+
+pub fn spawn_note(
+    commands: &mut Commands,
+    materials: Res<NoteResource>,
+    time: Res<Time>,
+    mut timer: ResMut<MusicTimer>,
+) {
+    
 }
+
+pub struct MusicTimer(Timer);
+
+pub fn playing_audio(
+    asset_server: Res<AssetServer>,
+    audio: Res<Audio>
+) {
+    let music = asset_server.load("music/test.ogg");
+    audio.play(music);
+}
+
+// #채보 Vec<Note>에 다 박아놓고 반환
+pub fn open_chart(file_path: &str) -> Vec<Note> {
+    let chart_file = File::open("assets/music/test.txt").expect("file not found");
+    let mut chart_vec: Vec<Note> = Vec::new();
+    let mut buffer = BufReader::new(chart_file);
+    let mut line: String = String::new();
+
+    loop {
+        let read_bytes = buffer.read_line(&mut line).unwrap();
+        println!("Buffer: {}", line.trim());
+        println!("Read Bytes: {}", read_bytes);
+        if read_bytes == 0 {
+            break;
+        }
+        chart_vec.push(parse_file_string(&line).unwrap());
+        line.clear();
+    }
+    chart_vec.sort_by(|a, b| a.timing.cmp(&b.timing));
+    chart_vec
+}
+
+fn parse_file_string(string: &String) -> Result<Note, &'static str> {
+    let mut start: usize = 0;
+    let mut end: usize = 0;
+    let mut commas: usize = 0;
+    let mut note = Note {
+        note_type: NoteType::Short,
+        press_key: Press4Key::First,
+        timing: 0,
+    };
+    println!("parsed string: {}", string.trim());
+    for c in string.chars() {
+        if c == ',' {
+            match commas {
+                0 => { 
+                    let parsed: usize = (&string[start..end]).parse().unwrap();
+                    start = end + 1;
+                    println!("commas 0: {}", parsed);
+                    match parsed {
+                        0 => note.press_key = Press4Key::First,
+                        1 => note.press_key = Press4Key::Second,
+                        2 => note.press_key = Press4Key::Third,
+                        3 => note.press_key = Press4Key::Fourth,
+                        _ => panic!("parsing press_key error")
+                    }
+                }
+                
+                1 => {
+                    let parsed: &str = &string[start..end];
+                    start = end + 1;
+                    println!("commas 1: {}", parsed);
+                    match parsed {
+                        "Short" => note.note_type = NoteType::Short,
+                        "Long" => note.note_type = NoteType::Long,
+                        _ => panic!("parsing type error")
+                    }
+                }
+
+                2 => {
+                    let parsed: usize = (&string[start..end]).parse().unwrap();
+                    println!("commas 2: {}\n", parsed);
+                    note.timing = parsed;
+                }
+                3 => break,
+                _ => panic!("parsing comma error : {}", commas),
+            }
+            commas = commas + 1;
+        } 
+        end = end + 1;
+    }
+
+    if commas == 3 {
+        Ok(note)
+    } else {
+        Err("Not parsed")
+    }
+} 
