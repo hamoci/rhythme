@@ -47,3 +47,11 @@ pub fn ui_select_music(
 //window 기본설정 : https://github.com/bevyengine/bevy/blob/latest/examples/window/window_settings.rs
 //
 */
+
+use bevy::prelude::*;
+
+//draw 
+pub fn draw_game_playing_ui () {
+
+}
+

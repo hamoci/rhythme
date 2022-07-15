@@ -1,27 +1,4 @@
-/*use bevy::prelude::*;
-use bevy_egui::{egui, EguiContext, EguiPlugin};
-mod screens;
-
-const RENDER_CYCLE: f32 = 1.0 / 60.0;
-
-fn main() {
-    App::new()
-        .insert_resource(WindowDescriptor {
-            title: "rhythme 0.1.0".to_string(),
-            width: 1200.,
-            height: 800.,
-            present_mode: bevy::window::PresentMode::Mailbox,
-            ..default()
-        })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(EguiPlugin)
-        .add_system(screens::ui_select_music)
-        .run();
-}
-*/
-
 use bevy::{input::system::exit_on_esc_system, prelude::*};
-
 use bevy_inspector_egui::WorldInspectorPlugin;
 
 mod notes;
@@ -37,13 +14,14 @@ fn main() {
         });
     app.add_plugins(DefaultPlugins);
     app.add_plugin(WorldInspectorPlugin::new());
-    app.add_startup_system(camera_setup)
-        .add_system(exit_on_esc_system)
-        .add_startup_system(notes::playing_audio)
-        .add_startup_system(notes::playing_setup)
-        .add_startup_system(notes::open_chart)
-        .add_system(notes::spawn_note)
-        .run();
+    app.add_startup_system(camera_setup);
+    app.add_system(exit_on_esc_system);
+    app.add_startup_system(notes::playing_audio);
+    app.add_startup_system(notes::load_note_asset);
+    app.add_startup_system(notes::open_chart);
+    app.add_startup_system(notes::playing_setup);
+    app.add_system(notes::spawn_note);
+    app.run();
 }
 
 fn camera_setup(mut commands: Commands) {

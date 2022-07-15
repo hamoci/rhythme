@@ -60,7 +60,7 @@ impl Plugin for NotePlugin {
     }
 }
 
-pub fn playing_setup(
+pub fn load_note_asset(
     mut commands: Commands,
     asset_server: Res<AssetServer>
 ) {
@@ -76,27 +76,69 @@ pub fn playing_setup(
     commands.insert_resource(note_resource);
 }
 
-pub fn spawn_note(
-    commands: &mut Commands,
-    materials: Res<NoteResource>,
-    time: Res<Time>,
-    note: Res<Note>,
-    mut timer: ResMut<MusicTimer>,
+pub fn playing_setup(
+    mut commands: Commands,
+    materials: Res<NoteResource>
 ) {
-    let material = match note.press_key {
-        Press4Key::First => materials.note_first.clone(),
-        Press4Key::Second => materials.note_second.clone(),
-        Press4Key::Third => materials.note_third.clone(),
-        Press4Key::Fourth => materials.note_fourth.clone(),
-    };
-
+    
     commands.spawn_bundle(SpriteBundle {
-        texture: material,
+        texture: materials.judge.clone(),
+        transform: Transform::from_translation(Vec3::new(0., -350., 0.)),
         ..Default::default()
     });
 }
 
-pub struct Chart(Vec<Note>);
+pub fn spawn_note(
+    mut commands: Commands,
+    materials: Res<NoteResource>,
+    //time: Res<Time>,
+    //mut timer: ResMut<MusicTimer>,
+    mut query_entity: Query<(Entity, &Chart)>
+) {
+
+    for chart in query_entity.iter_mut() {
+        for note in chart.1.notes.iter() {
+            let material = match note.press_key {
+                Press4Key::First => materials.note_first.clone(),
+                Press4Key::Second => materials.note_second.clone(),
+                Press4Key::Third => materials.note_third.clone(),
+                Press4Key::Fourth => materials.note_fourth.clone(),
+            };
+
+            let position_x = match note.press_key {
+                Press4Key::First => -151.5,
+                Press4Key::Second => -50.5,
+                Press4Key::Third => 50.5,
+                Press4Key::Fourth => 151.5,
+            };
+            
+            //let position_y = note.usize
+
+            let position = Transform::from_translation(Vec3::new(position_x, 300., 1.));
+
+            commands.spawn_bundle(SpriteBundle {
+                texture: material,
+                transform: position,
+                ..Default::default()
+            });
+        }
+    }
+    for chart in query_entity.iter_mut() {
+        commands.entity(chart.0).despawn();
+    }
+
+}
+
+#[derive(Component)]
+pub struct Chart {
+    notes: Vec<Note>,
+}
+
+#[derive(Component)]
+pub struct NotePosition {
+    x: f32,
+    y: f32,
+}
 
 pub struct MusicTimer(Timer);
 
@@ -109,7 +151,7 @@ pub fn playing_audio(
 }
 
 // #채보 Vec<Note>에 다 박아놓고 반환
-pub fn open_chart(commands:&mut Commands){
+pub fn open_chart(mut commands: Commands) {
     let chart_file = File::open("assets/music/test.txt").expect("file not found");
     let mut chart_vec: Vec<Note> = Vec::new();
     let mut buffer = BufReader::new(chart_file);
@@ -126,7 +168,11 @@ pub fn open_chart(commands:&mut Commands){
         line.clear();
     }
     chart_vec.sort_by(|a, b| a.timing.cmp(&b.timing));
-    commands.insert_resource(Chart(chart_vec));
+    let chart = Chart {
+        notes: chart_vec,
+    };
+    let mut chart_component = commands.spawn();
+    chart_component.insert(chart);
 }
 
 fn parse_file_string(string: &String) -> Result<Note, &'static str> {
@@ -185,3 +231,5 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         Err("Not parsed")
     }
 } 
+
+//노트가 화면 맨 위에서 화면 맨아래까지 얼마나 걸릴지를 속도로 정하면 될듯
