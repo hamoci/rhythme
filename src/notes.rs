@@ -4,37 +4,12 @@ use std::io::BufReader;
 use std::fs::File;
 
 pub struct NoteResource {
-    judge: Handle<ColorMaterial>,
-    background: Handle<ColorMaterial>,
-    note_first: Handle<ColorMaterial>,
-    note_second: Handle<ColorMaterial>,
-    note_third: Handle<ColorMaterial>,
-    note_fourth: Handle<ColorMaterial>,
-}
-impl FromWorld for NoteResource {
-    fn from_world(world: &mut World) -> Self {
-        let world = world.cell();
-
-        let mut material = world.get_resource_mut::<Assets<ColorMaterial>>().unwrap();
-        let asset_server = world.get_resource::<AssetServer>().unwrap();
-
-        let first_handle = asset_server.load("image/note_first.png");
-        let second_handle = asset_server.load("image/note_second.png");
-        let third_handle = asset_server.load("image/note_third.png");
-        let fourth_handle = asset_server.load("image/note_fourth.png");
-        let judge_handle = asset_server.load("image/judge.png");
-        let background_handle = asset_server.load("image/background.png");
-    
-
-        NoteResource {
-             background: material.add(background_handle.into()),
-             judge: material.add(judge_handle.into()),
-             note_first: material.add(first_handle.into()),
-             note_second: material.add(second_handle.into()),
-             note_third: material.add(third_handle.into()),
-             note_fourth: material.add(fourth_handle.into()),
-        }
-    }
+    judge: Handle<Image>,
+    background: Handle<Image>,
+    note_first: Handle<Image>,
+    note_second: Handle<Image>,
+    note_third: Handle<Image>,
+    note_fourth: Handle<Image>,
 }
 
 pub enum Press4Key{
@@ -77,14 +52,51 @@ pub enum GameStage {
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
+pub struct NotePlugin;
+
+impl Plugin for NotePlugin {
+    fn build(&self, app: &mut App) {
+        
+    }
+}
+
+pub fn playing_setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>
+) {
+    let note_resource = NoteResource {
+        judge: asset_server.load("image/judge.png"),
+        note_first: asset_server.load("image/note_first.png"),
+        note_second: asset_server.load("image/note_second.png"),
+        note_third: asset_server.load("image/note_third.png"),
+        note_fourth: asset_server.load("image/note_fourth.png"),
+        background: asset_server.load("image/background"),
+    };
+
+    commands.insert_resource(note_resource);
+}
+
 pub fn spawn_note(
     commands: &mut Commands,
     materials: Res<NoteResource>,
     time: Res<Time>,
+    note: Res<Note>,
     mut timer: ResMut<MusicTimer>,
 ) {
-    
+    let material = match note.press_key {
+        Press4Key::First => materials.note_first.clone(),
+        Press4Key::Second => materials.note_second.clone(),
+        Press4Key::Third => materials.note_third.clone(),
+        Press4Key::Fourth => materials.note_fourth.clone(),
+    };
+
+    commands.spawn_bundle(SpriteBundle {
+        texture: material,
+        ..Default::default()
+    });
 }
+
+pub struct Chart(Vec<Note>);
 
 pub struct MusicTimer(Timer);
 
@@ -97,7 +109,7 @@ pub fn playing_audio(
 }
 
 // #채보 Vec<Note>에 다 박아놓고 반환
-pub fn open_chart(file_path: &str) -> Vec<Note> {
+pub fn open_chart(commands:&mut Commands){
     let chart_file = File::open("assets/music/test.txt").expect("file not found");
     let mut chart_vec: Vec<Note> = Vec::new();
     let mut buffer = BufReader::new(chart_file);
@@ -114,7 +126,7 @@ pub fn open_chart(file_path: &str) -> Vec<Note> {
         line.clear();
     }
     chart_vec.sort_by(|a, b| a.timing.cmp(&b.timing));
-    chart_vec
+    commands.insert_resource(Chart(chart_vec));
 }
 
 fn parse_file_string(string: &String) -> Result<Note, &'static str> {
