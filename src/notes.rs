@@ -3,6 +3,8 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
 
+const FRAME: f32 = 1.0/60.0;
+
 pub struct NoteResource {
     judge: Handle<Image>,
     background: Handle<Image>,
@@ -10,8 +12,30 @@ pub struct NoteResource {
     note_second: Handle<Image>,
     note_third: Handle<Image>,
     note_fourth: Handle<Image>,
+    line: Handle<Image>,
 }
 
+impl FromWorld for NoteResource {
+    fn from_world(world: &mut World) -> Self {
+
+        let world = world.cell();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+
+        let note_resource = NoteResource {
+            judge: asset_server.load("image/judge.png"),
+            note_first: asset_server.load("image/note_first.png"),
+            note_second: asset_server.load("image/note_second.png"),
+            note_third: asset_server.load("image/note_third.png"),
+            note_fourth: asset_server.load("image/note_fourth.png"),
+            background: asset_server.load("image/background"),
+            line: asset_server.load("image/line.png"),
+        };
+
+        note_resource
+    }
+}
+
+#[derive(Clone)]
 pub enum Press4Key{
     First = 0,
     Second = 1,
@@ -19,16 +43,18 @@ pub enum Press4Key{
     Fourth = 3,
 }
 
+#[derive(Clone)]
 pub enum NoteType{
     Long = 0,
     Short = 1,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Note {
     note_type: NoteType,
     press_key: Press4Key,
     timing: usize,
+    speed: f32,
 }
 
 pub struct SongInfo {
@@ -56,10 +82,17 @@ pub struct NotePlugin;
 
 impl Plugin for NotePlugin {
     fn build(&self, app: &mut App) {
-        
+        app.init_resource::<NoteResource>()
+            .add_startup_system(playing_setup)
+            .add_startup_system(open_chart)
+            .add_system(spawn_note)
+            .add_system(move_note)
+            .add_system(show_playing_timer);
     }
 }
 
+/*
+Useless Code
 pub fn load_note_asset(
     mut commands: Commands,
     asset_server: Res<AssetServer>
@@ -75,7 +108,7 @@ pub fn load_note_asset(
 
     commands.insert_resource(note_resource);
 }
-
+*/
 pub fn playing_setup(
     mut commands: Commands,
     materials: Res<NoteResource>
@@ -86,13 +119,30 @@ pub fn playing_setup(
         transform: Transform::from_translation(Vec3::new(0., -350., 0.)),
         ..Default::default()
     });
+
+    for i in -2..3 {
+        commands.spawn_bundle(SpriteBundle {
+            texture: materials.line.clone(),
+            transform: Transform::from_translation(Vec3::new(i as f32 * 101., 0., 0.)),
+            ..Default::default()
+        });
+    }
+    let mut timer = MusicTimer(Timer::from_seconds(100., false));
+    commands.insert_resource(timer);
+}
+
+pub fn show_playing_timer(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: ResMut<MusicTimer>
+) {
+    timer.0.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
+    println!("{}", timer.0.elapsed_secs());  
 }
 
 pub fn spawn_note(
     mut commands: Commands,
     materials: Res<NoteResource>,
-    //time: Res<Time>,
-    //mut timer: ResMut<MusicTimer>,
     mut query_entity: Query<(Entity, &Chart)>
 ) {
 
@@ -105,21 +155,26 @@ pub fn spawn_note(
                 Press4Key::Fourth => materials.note_fourth.clone(),
             };
 
-            let position_x = match note.press_key {
+            let position_x: f32 = match note.press_key {
                 Press4Key::First => -151.5,
                 Press4Key::Second => -50.5,
                 Press4Key::Third => 50.5,
                 Press4Key::Fourth => 151.5,
             };
             
-            //let position_y = note.usize
+            let position_y: f32 = -350. + ((note.timing as f32) / 1000.) * (100. * note.speed);
 
-            let position = Transform::from_translation(Vec3::new(position_x, 300., 1.));
+            let position = Transform::from_translation(Vec3::new(position_x, position_y, 1.));
 
             commands.spawn_bundle(SpriteBundle {
                 texture: material,
                 transform: position,
                 ..Default::default()
+            }).insert(Note {
+                note_type: note.note_type.clone(),
+                press_key: note.press_key.clone(),
+                timing: note.timing,
+                speed: note.speed,
             });
         }
     }
@@ -129,16 +184,22 @@ pub fn spawn_note(
 
 }
 
-#[derive(Component)]
-pub struct Chart {
-    notes: Vec<Note>,
+pub fn move_note(
+    mut query_note: Query<(Entity, &Note, &mut Transform)>,
+    time: Res<Time>
+) {
+    for (_entity, note, mut transform) in query_note.iter_mut() {
+        transform.translation.y -= time.delta_seconds() * 100. * note.speed;
+    }
 }
 
 #[derive(Component)]
-pub struct NotePosition {
-    x: f32,
-    y: f32,
+pub struct Chart {
+    notes: Vec<Note>
 }
+
+#[derive(Component)]
+pub struct Speed(f32);
 
 pub struct MusicTimer(Timer);
 
@@ -183,6 +244,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         note_type: NoteType::Short,
         press_key: Press4Key::First,
         timing: 0,
+        speed: 7.0,
     };
     println!("parsed string: {}", string.trim());
     for c in string.chars() {
