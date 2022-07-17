@@ -13,6 +13,8 @@ fn main() {
             height: 1000.0,
             ..Default::default()
         });
+   //#[cfg(target_arch = "wasm32")]
+    //app.add_plugins(bevy_webgl2::DefaultPlugins);
     app.add_plugins(DefaultPlugins);
     app.add_plugin(WorldInspectorPlugin::new());
     app.add_plugin(bevy_framepace::FramepacePlugin::default());
@@ -31,5 +33,5 @@ fn camera_setup(mut commands: Commands) {
 fn frame_limit(
     mut setting: ResMut<bevy_framepace::FramepacePlugin>
 ) {
-    setting.framerate_limit = bevy_framepace::FramerateLimit::Manual(75);
+    setting.framerate_limit = bevy_framepace::FramerateLimit::Manual(60);
 }

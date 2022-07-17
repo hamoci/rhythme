@@ -87,28 +87,11 @@ impl Plugin for NotePlugin {
             .add_startup_system(open_chart)
             .add_system(spawn_note)
             .add_system(move_note)
+            .add_system(despawn_note)
             .add_system(show_playing_timer);
     }
 }
 
-/*
-Useless Code
-pub fn load_note_asset(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>
-) {
-    let note_resource = NoteResource {
-        judge: asset_server.load("image/judge.png"),
-        note_first: asset_server.load("image/note_first.png"),
-        note_second: asset_server.load("image/note_second.png"),
-        note_third: asset_server.load("image/note_third.png"),
-        note_fourth: asset_server.load("image/note_fourth.png"),
-        background: asset_server.load("image/background"),
-    };
-
-    commands.insert_resource(note_resource);
-}
-*/
 pub fn playing_setup(
     mut commands: Commands,
     materials: Res<NoteResource>
@@ -127,8 +110,6 @@ pub fn playing_setup(
             ..Default::default()
         });
     }
-    let mut timer = MusicTimer(Timer::from_seconds(100., false));
-    commands.insert_resource(timer);
 }
 
 pub fn show_playing_timer(
@@ -136,7 +117,6 @@ pub fn show_playing_timer(
     time: Res<Time>,
     mut timer: ResMut<MusicTimer>
 ) {
-    timer.0.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
     println!("{}", timer.0.elapsed_secs());  
 }
 
@@ -186,11 +166,31 @@ pub fn spawn_note(
 
 pub fn move_note(
     mut query_note: Query<(Entity, &Note, &mut Transform)>,
-    time: Res<Time>
+    time: Res<Time>,
+    mut timer: ResMut<MusicTimer>
+
 ) {
     for (_entity, note, mut transform) in query_note.iter_mut() {
         transform.translation.y -= time.delta_seconds() * 100. * note.speed;
     }
+    timer.0.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
+}
+
+pub fn despawn_note(
+    mut commands: Commands,
+    query_note: Query<(Entity, &Note)>,
+    key_input: Res<Input<KeyCode>>,
+    timer: Res<MusicTimer>
+) {
+    for (entity, note) in query_note.iter() {
+        if (note.timing as f32 / 1000. > timer.0.elapsed_secs() + 0.0467) && (note.timing as f32 / 1000. < timer.0.elapsed_secs() + 0.0467) && {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn find_key_just(key_type: &Note) -> {
+
 }
 
 #[derive(Component)]
@@ -233,7 +233,9 @@ pub fn open_chart(mut commands: Commands) {
         notes: chart_vec,
     };
     let mut chart_component = commands.spawn();
+    let mut timer = MusicTimer(Timer::from_seconds(100., false));
     chart_component.insert(chart);
+    commands.insert_resource(timer);
 }
 
 fn parse_file_string(string: &String) -> Result<Note, &'static str> {
@@ -293,5 +295,3 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         Err("Not parsed")
     }
 } 
-
-//노트가 화면 맨 위에서 화면 맨아래까지 얼마나 걸릴지를 속도로 정하면 될듯
