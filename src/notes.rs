@@ -1,9 +1,11 @@
+use bevy::math::XYZ;
 use bevy::prelude::*;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
 
 const FRAME: f32 = 1.0/60.0;
+const STANDARD_NOTE_SPEED: f32 = 100.;
 
 pub struct NoteResource {
     judge: Handle<Image>,
@@ -12,6 +14,7 @@ pub struct NoteResource {
     note_second: Handle<Image>,
     note_third: Handle<Image>,
     note_fourth: Handle<Image>,
+    backlight: Handle<Image>,
     line: Handle<Image>,
 }
 
@@ -27,7 +30,8 @@ impl FromWorld for NoteResource {
             note_second: asset_server.load("image/note_second.png"),
             note_third: asset_server.load("image/note_third.png"),
             note_fourth: asset_server.load("image/note_fourth.png"),
-            background: asset_server.load("image/background"),
+            background: asset_server.load("image/background.png"),
+            backlight: asset_server.load("image/backlight.png"),
             line: asset_server.load("image/line.png"),
         };
 
@@ -35,7 +39,7 @@ impl FromWorld for NoteResource {
     }
 }
 
-#[derive(Clone)]
+#[derive(Eq, PartialEq, Component, Clone)]
 pub enum Press4Key{
     First = 0,
     Second = 1,
@@ -57,6 +61,8 @@ pub struct Note {
     speed: f32,
 }
 
+#[derive(Component)]
+pub struct BackLight;
 pub struct SongInfo {
     name: String,
     time_length: f32,
@@ -88,7 +94,9 @@ impl Plugin for NotePlugin {
             .add_system(spawn_note)
             .add_system(move_note)
             .add_system(despawn_note)
-            .add_system(show_playing_timer);
+            .add_system(spawn_keyboard_backlight)
+            .add_system(despawn_keyboard_backlight);
+            //.add_system(_show_playing_timer); // for debug
     }
 }
 
@@ -96,23 +104,29 @@ pub fn playing_setup(
     mut commands: Commands,
     materials: Res<NoteResource>
 ) {
-    
+    commands.spawn_bundle(SpriteBundle {
+        texture: materials.background.clone(),
+        transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
+        ..Default::default()
+    });
+
     commands.spawn_bundle(SpriteBundle {
         texture: materials.judge.clone(),
-        transform: Transform::from_translation(Vec3::new(0., -350., 0.)),
+        transform: Transform::from_translation(Vec3::new(0., -350., 1.)),
         ..Default::default()
     });
 
     for i in -2..3 {
         commands.spawn_bundle(SpriteBundle {
             texture: materials.line.clone(),
-            transform: Transform::from_translation(Vec3::new(i as f32 * 101., 0., 0.)),
+            transform: Transform::from_translation(Vec3::new(i as f32 * 101., 0., 1.)),
             ..Default::default()
         });
     }
 }
 
-pub fn show_playing_timer(
+//for Debug
+pub fn _show_playing_timer(
     mut commands: Commands,
     time: Res<Time>,
     mut timer: ResMut<MusicTimer>
@@ -141,10 +155,10 @@ pub fn spawn_note(
                 Press4Key::Third => 50.5,
                 Press4Key::Fourth => 151.5,
             };
-            
-            let position_y: f32 = -350. + ((note.timing as f32) / 1000.) * (100. * note.speed);
+            // -350 : Judgement line
+            let position_y: f32 = -350. + ((note.timing as f32) / 1000.) * (STANDARD_NOTE_SPEED * note.speed);
 
-            let position = Transform::from_translation(Vec3::new(position_x, position_y, 1.));
+            let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
 
             commands.spawn_bundle(SpriteBundle {
                 texture: material,
@@ -171,8 +185,9 @@ pub fn move_note(
 
 ) {
     for (_entity, note, mut transform) in query_note.iter_mut() {
-        transform.translation.y -= time.delta_seconds() * 100. * note.speed;
+        transform.translation.y -= time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
     }
+    //Timer ticking
     timer.0.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
 }
 
@@ -183,14 +198,96 @@ pub fn despawn_note(
     timer: Res<MusicTimer>
 ) {
     for (entity, note) in query_note.iter() {
-        if (note.timing as f32 / 1000. > timer.0.elapsed_secs() + 0.0467) && (note.timing as f32 / 1000. < timer.0.elapsed_secs() + 0.0467) && {
+        let key: KeyCode = match note.press_key {
+            Press4Key::First => KeyCode::Z,
+            Press4Key::Second => KeyCode::X,
+            Press4Key::Third => KeyCode::Period,
+            Press4Key::Fourth => KeyCode::Slash,
+            _ => KeyCode::Key0
+        };
+        //Judgement : Perfect 0.04167sec (DJMAX V Respect)
+        //            Great   0.09000sec
+        if key_input.just_pressed(key) {
+            println!("current timer: {}", timer.0.elapsed_secs());
+            if (note.timing as f32 / 1000. + 0.04167 > timer.0.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < timer.0.elapsed_secs()) {
+                println!("note timing : {}", note.timing as f32 / 1000.);
+                commands.entity(entity).despawn();
+                println!("perfect {}", note.timing as f32 / 1000.);
+            } else if (note.timing as f32 / 1000. + 0.09 > timer.0.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < timer.0.elapsed_secs()) {
+                println!("note timing : {}", note.timing as f32 / 1000.);
+                commands.entity(entity).despawn();
+                println!("great {}", note.timing as f32 / 1000.);
+            }
+        }
+        
+        if note.timing as f32 / 1000. + 0.09  < timer.0.elapsed_secs() {
+            commands.entity(entity).despawn();
+            println!("miss {}", timer.0.elapsed_secs());
+        }
+    } 
+}
+
+// For debug only
+pub fn spawn_keyboard_backlight(
+    mut commands: Commands,
+    key_input: Res<Input<KeyCode>>,
+    materials: Res<NoteResource>, 
+) {
+    if key_input.just_pressed(KeyCode::Z) {
+        commands.spawn_bundle(SpriteBundle {
+            texture: materials.backlight.clone(),
+            transform: Transform::from_translation(Vec3::new(-151.5, 75., 1.)),
+            ..Default::default()
+        }).insert(Press4Key::First).insert(BackLight);
+    }
+    if key_input.just_pressed(KeyCode::X) {
+        commands.spawn_bundle(SpriteBundle {
+            texture: materials.backlight.clone(),
+            transform: Transform::from_translation(Vec3::new(-50.5, 75., 1.)),
+            ..Default::default()
+        }).insert(Press4Key::Second).insert(BackLight);
+    }
+    if key_input.just_pressed(KeyCode::Period) {
+        commands.spawn_bundle(SpriteBundle {
+            texture: materials.backlight.clone(),
+            transform: Transform::from_translation(Vec3::new(50.5, 75., 1.)),
+            ..Default::default()
+        }).insert(Press4Key::Third).insert(BackLight);
+    }
+    if key_input.just_pressed(KeyCode::Slash) {
+        commands.spawn_bundle(SpriteBundle {
+            texture: materials.backlight.clone(),
+            transform: Transform::from_translation(Vec3::new(151.5, 75., 1.)),
+            ..Default::default()
+        }).insert(Press4Key::Fourth).insert(BackLight);
+    }
+}
+
+pub fn despawn_keyboard_backlight(
+    mut commands: Commands,
+    key_input: Res<Input<KeyCode>>,
+    query : Query<(Entity, &BackLight, &Press4Key)>,
+) {
+    for (entity, _backlight, key_type) in query.iter() {
+        if key_input.just_released(KeyCode::Z) && (*key_type == Press4Key::First){
+            commands.entity(entity).despawn();
+        }
+        if key_input.just_released(KeyCode::X) && (*key_type == Press4Key::Second){
+            commands.entity(entity).despawn();
+        }
+        if key_input.just_released(KeyCode::Period) && (*key_type == Press4Key::Third){
+            commands.entity(entity).despawn();
+        }
+        if key_input.just_released(KeyCode::Slash) && (*key_type == Press4Key::Fourth){
             commands.entity(entity).despawn();
         }
     }
 }
 
-fn find_key_just(key_type: &Note) -> {
-
+pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy::input::keyboard::KeyboardInput>) {
+    for event in keyboard_input_events.iter() {
+        info!("{:?}", event);
+    }
 }
 
 #[derive(Component)]
