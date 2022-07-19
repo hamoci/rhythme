@@ -20,7 +20,7 @@ fn main() {
     app.add_plugin(bevy_framepace::FramepacePlugin::default());
     app.add_startup_system(camera_setup);
     app.add_startup_system(frame_limit);
-    app.add_system(exit_on_esc_system);
+   // app.add_system(exit_on_esc_system);
    // app.add_startup_system(notes::playing_audio);
     app.add_plugin(notes::NotePlugin);
     //app.add_system(notes::print_keyboard_event_system); // for debug

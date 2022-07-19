@@ -1,5 +1,5 @@
-use bevy::math::XYZ;
 use bevy::prelude::*;
+use bevy_kira_audio::{Audio, AudioPlugin, InstanceHandle};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
@@ -16,6 +16,7 @@ pub struct NoteResource {
     note_fourth: Handle<Image>,
     backlight: Handle<Image>,
     line: Handle<Image>,
+    pause: Handle<Image>,
 }
 
 impl FromWorld for NoteResource {
@@ -33,6 +34,7 @@ impl FromWorld for NoteResource {
             background: asset_server.load("image/background.png"),
             backlight: asset_server.load("image/backlight.png"),
             line: asset_server.load("image/line.png"),
+            pause: asset_server.load("image/pause.png"),
         };
 
         note_resource
@@ -65,6 +67,7 @@ pub struct Note {
 pub struct BackLight;
 pub struct SongInfo {
     name: String,
+    bpm: usize,
     time_length: f32,
     difficulty: f32,
 }
@@ -81,6 +84,23 @@ pub enum GameStage {
     Playing,
     Select,
 }
+
+#[derive(Component)]
+pub struct Chart {
+    notes: Vec<Note>
+}
+
+#[derive(Component)]
+pub struct MusicTimer {
+    timer: Timer,
+}
+
+#[derive(Component)]
+pub struct Hold;
+
+#[derive(Component)]
+pub struct PausedText;
+
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
@@ -89,18 +109,20 @@ pub struct NotePlugin;
 impl Plugin for NotePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NoteResource>()
-            .add_startup_system(playing_setup)
+            .add_startup_system(spawn_background)
             .add_startup_system(open_chart)
+            .add_system(game_ticking)
             .add_system(spawn_note)
-            .add_system(move_note)
             .add_system(despawn_note)
+            .add_system(move_note)
             .add_system(spawn_keyboard_backlight)
-            .add_system(despawn_keyboard_backlight);
-            //.add_system(_show_playing_timer); // for debug
+            .add_system(despawn_keyboard_backlight)
+            .add_system(pause_game);
+           // app.add_system(_show_playing_timer); // for debug
     }
 }
 
-pub fn playing_setup(
+pub fn spawn_background(
     mut commands: Commands,
     materials: Res<NoteResource>
 ) {
@@ -112,7 +134,7 @@ pub fn playing_setup(
 
     commands.spawn_bundle(SpriteBundle {
         texture: materials.judge.clone(),
-        transform: Transform::from_translation(Vec3::new(0., -350., 1.)),
+        transform: Transform::from_translation(Vec3::new(0., -350., 2.)),
         ..Default::default()
     });
 
@@ -125,13 +147,39 @@ pub fn playing_setup(
     }
 }
 
-//for Debug
-pub fn _show_playing_timer(
+pub fn game_ticking(
     mut commands: Commands,
     time: Res<Time>,
-    mut timer: ResMut<MusicTimer>
+    mut timer: Query<(Entity, &mut MusicTimer, Without<Hold>)>,
+    mut hold_time: Query<(Entity, &mut MusicTimer, With<Hold>)>
 ) {
-    println!("{}", timer.0.elapsed_secs());  
+    for (entity, mut music_time, _hold) in hold_time.iter_mut() {
+        music_time.timer.tick(time.delta());
+        //println!("Ticking(hold): {}", music_time.timer.elapsed_secs()); //for debug
+        if music_time.timer.finished() {
+            commands.entity(entity).despawn();
+        }
+        return
+    }
+
+    //Timer ticking
+    //현재 시간을 나타내는 Time을 불러온 뒤, 현재와 마지막 tick간의 시간차만큼 timer가 흐르게 만듬
+    //주석처리된 코드는 Duration structure를 반환하기 때문에, 필요에 따라 아래의 코드를 써야할 때도 있음
+    //music_timer.timer.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
+    for (_entity, mut music_timer, _dummy) in timer.iter_mut() {    
+        if !music_timer.timer.paused() {
+            music_timer.timer.tick(time.delta());
+        }
+    }
+}
+
+//for Debug
+pub fn _show_playing_timer(
+    mut timer: Query<(Entity, &MusicTimer, Without<Hold>)>
+) {
+    for (_entity, music_timer, _dummy) in timer.iter() {
+        println!("{}", music_timer.timer.elapsed_secs());  
+    }
 }
 
 pub fn spawn_note(
@@ -139,7 +187,7 @@ pub fn spawn_note(
     materials: Res<NoteResource>,
     mut query_entity: Query<(Entity, &Chart)>
 ) {
-
+    //println!("")
     for chart in query_entity.iter_mut() {
         for note in chart.1.notes.iter() {
             let material = match note.press_key {
@@ -180,49 +228,52 @@ pub fn spawn_note(
 
 pub fn move_note(
     mut query_note: Query<(Entity, &Note, &mut Transform)>,
-    time: Res<Time>,
-    mut timer: ResMut<MusicTimer>
-
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
+    time: Res<Time>
 ) {
-    for (_entity, note, mut transform) in query_note.iter_mut() {
-        transform.translation.y -= time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
+    for (_entity, music_timer, _dummy) in timer.iter() {
+        for (_entity, note, mut transform) in query_note.iter_mut() {
+            if (music_timer.timer.elapsed_secs() > 0.) && (!music_timer.timer.paused()) {
+                transform.translation.y -= time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
+            }
+        }
     }
-    //Timer ticking
-    timer.0.tick(std::time::Duration::from_secs_f32(time.delta_seconds()));
 }
 
 pub fn despawn_note(
     mut commands: Commands,
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
-    timer: Res<MusicTimer>
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>
 ) {
-    for (entity, note) in query_note.iter() {
-        let key: KeyCode = match note.press_key {
-            Press4Key::First => KeyCode::Z,
-            Press4Key::Second => KeyCode::X,
-            Press4Key::Third => KeyCode::Period,
-            Press4Key::Fourth => KeyCode::Slash,
-            _ => KeyCode::Key0
-        };
-        //Judgement : Perfect 0.04167sec (DJMAX V Respect)
-        //            Great   0.09000sec
-        if key_input.just_pressed(key) {
-            println!("current timer: {}", timer.0.elapsed_secs());
-            if (note.timing as f32 / 1000. + 0.04167 > timer.0.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < timer.0.elapsed_secs()) {
-                println!("note timing : {}", note.timing as f32 / 1000.);
-                commands.entity(entity).despawn();
-                println!("perfect {}", note.timing as f32 / 1000.);
-            } else if (note.timing as f32 / 1000. + 0.09 > timer.0.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < timer.0.elapsed_secs()) {
-                println!("note timing : {}", note.timing as f32 / 1000.);
-                commands.entity(entity).despawn();
-                println!("great {}", note.timing as f32 / 1000.);
+    for (_entity, music_timer, _dummy) in timer.iter() {
+        for (entity, note) in query_note.iter() {
+            let key: KeyCode = match note.press_key {
+                Press4Key::First => KeyCode::Z,
+                Press4Key::Second => KeyCode::X,
+                Press4Key::Third => KeyCode::Period,
+                Press4Key::Fourth => KeyCode::Slash,
+                _ => KeyCode::Key0
+            };
+            //Judgement : Perfect 0.04167sec (DJMAX V Respect)
+            //            Great   0.09000sec
+            if key_input.just_pressed(key) && (!music_timer.timer.paused()) {
+                println!("current timer: {}", music_timer.timer.elapsed_secs());
+                if (note.timing as f32 / 1000. + 0.04167 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < music_timer.timer.elapsed_secs()) {
+                    println!("note timing : {}", note.timing as f32 / 1000.);
+                    commands.entity(entity).despawn();
+                    println!("perfect {}", note.timing as f32 / 1000.);
+                } else if (note.timing as f32 / 1000. + 0.09 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < music_timer.timer.elapsed_secs()) {
+                    println!("note timing : {}", note.timing as f32 / 1000.);
+                    commands.entity(entity).despawn();
+                    println!("great {}", note.timing as f32 / 1000.);
+                }
             }
-        }
-        
-        if note.timing as f32 / 1000. + 0.09  < timer.0.elapsed_secs() {
-            commands.entity(entity).despawn();
-            println!("miss {}", timer.0.elapsed_secs());
+            
+            if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
+                commands.entity(entity).despawn();
+                println!("miss {}", music_timer.timer.elapsed_secs());
+            }
         }
     } 
 }
@@ -232,34 +283,41 @@ pub fn spawn_keyboard_backlight(
     mut commands: Commands,
     key_input: Res<Input<KeyCode>>,
     materials: Res<NoteResource>, 
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>
 ) {
-    if key_input.just_pressed(KeyCode::Z) {
-        commands.spawn_bundle(SpriteBundle {
-            texture: materials.backlight.clone(),
-            transform: Transform::from_translation(Vec3::new(-151.5, 75., 1.)),
-            ..Default::default()
-        }).insert(Press4Key::First).insert(BackLight);
+    let mut is_paused: bool = false;
+    for (_entity, music_timer, _dummy) in timer.iter() {
+        is_paused = music_timer.timer.paused();
     }
-    if key_input.just_pressed(KeyCode::X) {
-        commands.spawn_bundle(SpriteBundle {
-            texture: materials.backlight.clone(),
-            transform: Transform::from_translation(Vec3::new(-50.5, 75., 1.)),
-            ..Default::default()
-        }).insert(Press4Key::Second).insert(BackLight);
-    }
-    if key_input.just_pressed(KeyCode::Period) {
-        commands.spawn_bundle(SpriteBundle {
-            texture: materials.backlight.clone(),
-            transform: Transform::from_translation(Vec3::new(50.5, 75., 1.)),
-            ..Default::default()
-        }).insert(Press4Key::Third).insert(BackLight);
-    }
-    if key_input.just_pressed(KeyCode::Slash) {
-        commands.spawn_bundle(SpriteBundle {
-            texture: materials.backlight.clone(),
-            transform: Transform::from_translation(Vec3::new(151.5, 75., 1.)),
-            ..Default::default()
-        }).insert(Press4Key::Fourth).insert(BackLight);
+    if !is_paused {
+        if key_input.just_pressed(KeyCode::Z) {
+            commands.spawn_bundle(SpriteBundle {
+                texture: materials.backlight.clone(),
+                transform: Transform::from_translation(Vec3::new(-151.5, 75., 1.)),
+                ..Default::default()
+            }).insert(Press4Key::First).insert(BackLight);
+        }
+        if key_input.just_pressed(KeyCode::X) {
+            commands.spawn_bundle(SpriteBundle {
+                texture: materials.backlight.clone(),
+                transform: Transform::from_translation(Vec3::new(-50.5, 75., 1.)),
+                ..Default::default()
+            }).insert(Press4Key::Second).insert(BackLight);
+        }
+        if key_input.just_pressed(KeyCode::Period) {
+            commands.spawn_bundle(SpriteBundle {
+                texture: materials.backlight.clone(),
+                transform: Transform::from_translation(Vec3::new(50.5, 75., 1.)),
+                ..Default::default()
+            }).insert(Press4Key::Third).insert(BackLight);
+        }
+        if key_input.just_pressed(KeyCode::Slash) {
+            commands.spawn_bundle(SpriteBundle {
+                texture: materials.backlight.clone(),
+                transform: Transform::from_translation(Vec3::new(151.5, 75., 1.)),
+                ..Default::default()
+            }).insert(Press4Key::Fourth).insert(BackLight);
+        }
     }
 }
 
@@ -290,25 +348,39 @@ pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy:
     }
 }
 
-#[derive(Component)]
-pub struct Chart {
-    notes: Vec<Note>
-}
-
-#[derive(Component)]
-pub struct Speed(f32);
-
-pub struct MusicTimer(Timer);
-
 pub fn playing_audio(
     asset_server: Res<AssetServer>,
-    audio: Res<Audio>
+    audio: Res<Audio>,
 ) {
-    let music = asset_server.load("music/test.ogg");
+    let music = asset_server.load("music/test.mp3");
     audio.play(music);
 }
 
-// #채보 Vec<Note>에 다 박아놓고 반환
+pub fn pause_game(
+    mut commands: Commands,
+    key_input: Res<Input<KeyCode>>,
+    mut timer: Query<(Entity, &mut MusicTimer)>,
+    mut text: Query<(Entity, &PausedText)>,
+    materials: Res<NoteResource>
+) {
+    for (_entity, mut music_timer) in timer.iter_mut() {
+        if key_input.just_pressed(KeyCode::Escape) && (!music_timer.timer.paused()) {
+            music_timer.timer.pause();
+            //TODO: 차후에 Font 추가후 텍스트로 바꿔야함
+            commands.spawn_bundle( SpriteBundle {
+                texture: materials.pause.clone(),
+                transform: Transform::from_translation(Vec3::new(275., 0., 3.)),
+                ..Default::default()
+            }).insert(PausedText);
+        } else if key_input.just_pressed(KeyCode::Escape) && music_timer.timer.paused() {
+            music_timer.timer.unpause();
+            for (entity, paused_text) in text.iter() {
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+}
+
 pub fn open_chart(mut commands: Commands) {
     let chart_file = File::open("assets/music/test.txt").expect("file not found");
     let mut chart_vec: Vec<Note> = Vec::new();
@@ -329,10 +401,15 @@ pub fn open_chart(mut commands: Commands) {
     let chart = Chart {
         notes: chart_vec,
     };
-    let mut chart_component = commands.spawn();
-    let mut timer = MusicTimer(Timer::from_seconds(100., false));
-    chart_component.insert(chart);
-    commands.insert_resource(timer);
+    commands.spawn().insert(chart);
+
+    let music_timer = MusicTimer {timer: Timer::from_seconds(100., false)};
+    commands.spawn().insert(music_timer);
+
+    //게임시작하고 3초대기
+    let hold_timer = MusicTimer { timer: Timer::from_seconds(3., false)}; 
+    commands.spawn().insert(hold_timer).insert(Hold);
+
 }
 
 fn parse_file_string(string: &String) -> Result<Note, &'static str> {
