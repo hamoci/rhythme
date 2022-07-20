@@ -1,11 +1,29 @@
 use bevy::prelude::*;
-use bevy_kira_audio::{Audio, AudioPlugin, InstanceHandle};
+use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
 
 const FRAME: f32 = 1.0/60.0;
 const STANDARD_NOTE_SPEED: f32 = 100.;
+
+pub struct FontResource {
+    font: Handle<Font>,
+}
+
+impl FromWorld for FontResource {
+    fn from_world(world: &mut World) -> Self {
+
+        let world = world.cell();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+
+        let font_resource = FontResource {
+            font: asset_server.load("font/Galmuri11.ttf")
+        };
+
+        font_resource
+    }
+}
 
 pub struct NoteResource {
     judge: Handle<Image>,
@@ -72,6 +90,7 @@ pub struct SongInfo {
     difficulty: f32,
 }
 
+#[derive(Component)]
 pub struct PlayingInfo {
     song_name: String,
     accuracy: f32,
@@ -101,6 +120,9 @@ pub struct Hold;
 #[derive(Component)]
 pub struct PausedText;
 
+#[derive(Component)]
+pub struct TimerText;
+
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
@@ -109,14 +131,24 @@ pub struct NotePlugin;
 impl Plugin for NotePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NoteResource>()
+            .init_resource::<FontResource>()
+            .add_audio_channel::<MainTrackChannel>()
+            .add_startup_system(setup_audio_channel)
+            .add_startup_system(setup_background_text)
             .add_startup_system(spawn_background)
             .add_startup_system(open_chart)
             .add_system(game_ticking)
+            .add_system(update_background_text)
+
+            .add_system(control_audio)
+
             .add_system(spawn_note)
             .add_system(despawn_note)
             .add_system(move_note)
+
             .add_system(spawn_keyboard_backlight)
             .add_system(despawn_keyboard_backlight)
+
             .add_system(pause_game);
            // app.add_system(_show_playing_timer); // for debug
     }
@@ -170,15 +202,6 @@ pub fn game_ticking(
         if !music_timer.timer.paused() {
             music_timer.timer.tick(time.delta());
         }
-    }
-}
-
-//for Debug
-pub fn _show_playing_timer(
-    mut timer: Query<(Entity, &MusicTimer, Without<Hold>)>
-) {
-    for (_entity, music_timer, _dummy) in timer.iter() {
-        println!("{}", music_timer.timer.elapsed_secs());  
     }
 }
 
@@ -258,7 +281,7 @@ pub fn despawn_note(
             //Judgement : Perfect 0.04167sec (DJMAX V Respect)
             //            Great   0.09000sec
             if key_input.just_pressed(key) && (!music_timer.timer.paused()) {
-                println!("current timer: {}", music_timer.timer.elapsed_secs());
+                //println!("current timer: {}", music_timer.timer.elapsed_secs());
                 if (note.timing as f32 / 1000. + 0.04167 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < music_timer.timer.elapsed_secs()) {
                     println!("note timing : {}", note.timing as f32 / 1000.);
                     commands.entity(entity).despawn();
@@ -278,7 +301,6 @@ pub fn despawn_note(
     } 
 }
 
-// For debug only
 pub fn spawn_keyboard_backlight(
     mut commands: Commands,
     key_input: Res<Input<KeyCode>>,
@@ -348,12 +370,131 @@ pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy:
     }
 }
 
-pub fn playing_audio(
-    asset_server: Res<AssetServer>,
-    audio: Res<Audio>,
+#[derive(Component, Default, Clone)]
+pub struct MainTrackChannel;
+
+pub struct ChannelAudioState<T> {
+    stopped: bool,
+    paused: bool,
+    loop_started: bool,
+    volume: f32,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> Default for ChannelAudioState<T> {
+    fn default() -> Self {
+        ChannelAudioState {
+            volume: 0.1,    //Basic : 1
+            stopped: true,
+            paused: false,
+            loop_started: false,
+            _marker: std::marker::PhantomData::<T>::default(),
+        }
+    }
+}
+
+pub struct AudioResource {
+    main_track: Handle<AudioSource>,
+}
+
+pub fn setup_background_text(
+    mut commands: Commands,
+    font_resource: Res<FontResource>,
 ) {
-    let music = asset_server.load("music/test.mp3");
-    audio.play(music);
+    commands.spawn_bundle(TextBundle {
+        style: Style {
+            align_self: AlignSelf::FlexEnd,
+            ..default()
+        },
+        text: Text { 
+            sections: vec![
+                TextSection {
+                    value: "Time : ".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                        ..default()
+                    },
+                },
+                
+                TextSection {
+                    value: "".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                }
+            ],
+            ..default()
+        },
+        transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
+        ..default()
+    })
+    .insert(TimerText);
+}
+
+pub fn update_background_text(
+    mut commands: Commands,
+    mut query: Query<(&mut Text, With<TimerText>)>,
+    timer: Query<(&MusicTimer, Without<Hold>)>
+) {
+    let (music_timer, _hold) = timer.single();
+    for (mut text, _timer_text) in query.iter_mut() {
+        text.sections[1].value = music_timer.timer.elapsed_secs().to_string();
+    }
+}
+
+//init system
+//Making Main SoundTrack Channel.(to play music)
+pub fn setup_audio_channel(
+    mut commands: Commands,
+    asset_server: ResMut<AssetServer>,
+) {
+    let sound_track = asset_server.load("music/test.mp3");
+
+    commands.insert_resource(AudioResource {main_track: sound_track});
+    commands.insert_resource(ChannelAudioState::<MainTrackChannel>::default());
+    
+}
+
+pub fn control_audio(
+    mut commands: Commands,
+    audio_channel: Res<AudioChannel<MainTrackChannel>>,
+    mut audio_state: ResMut<ChannelAudioState<MainTrackChannel>>,
+    audio_source: Res<AudioResource>,
+    hold_timer: Query<(&MusicTimer, Without<Hold>)>,
+) {
+    let (timer, _hold) = hold_timer.single();
+
+    if timer.timer.elapsed_secs() > 0.{
+        if audio_state.stopped == true {
+            audio_channel.play(audio_source.main_track.clone());
+            audio_channel.set_volume(audio_state.volume);
+            audio_state.stopped = false;
+            println!("Play Music");
+            return
+        }
+
+        if timer.timer.paused() && !audio_state.paused{
+            audio_channel.pause();
+            audio_state.paused = true;
+            println!("Music Paused");
+        } else if !timer.timer.paused() && audio_state.paused{
+            audio_channel.resume();
+            audio_state.paused = false;
+            println!("Music Resumed");
+        }
+    }
+}
+
+pub fn _show_playing_timer(
+    mut timer: Query<(Entity, &MusicTimer, Without<Hold>)>
+) {
+    for (_entity, music_timer, _dummy) in timer.iter() {
+        println!("{}", music_timer.timer.elapsed_secs());  
+    }
 }
 
 pub fn pause_game(
@@ -403,7 +544,7 @@ pub fn open_chart(mut commands: Commands) {
     };
     commands.spawn().insert(chart);
 
-    let music_timer = MusicTimer {timer: Timer::from_seconds(100., false)};
+    let music_timer = MusicTimer {timer: Timer::from_seconds(200., false)};
     commands.spawn().insert(music_timer);
 
     //게임시작하고 3초대기
@@ -420,7 +561,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         note_type: NoteType::Short,
         press_key: Press4Key::First,
         timing: 0,
-        speed: 7.0,
+        speed: 10.0,
     };
     println!("parsed string: {}", string.trim());
     for c in string.chars() {
