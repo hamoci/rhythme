@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::sprite::Rect;
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -123,6 +124,13 @@ pub struct PausedText;
 #[derive(Component)]
 pub struct TimerText;
 
+#[derive(Component)]
+pub struct Scoreboard {
+    perfect: usize,
+    great: usize,
+    miss: usize,
+}
+
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
@@ -139,6 +147,7 @@ impl Plugin for NotePlugin {
             .add_startup_system(open_chart)
             .add_system(game_ticking)
             .add_system(update_background_text)
+            .add_system(update_scoreboard)
 
             .add_system(control_audio)
 
@@ -263,11 +272,14 @@ pub fn move_note(
     }
 }
 
+
+
 pub fn despawn_note(
     mut commands: Commands,
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
-    timer: Query<(Entity, &MusicTimer, Without<Hold>)>
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
+    mut score: Query<&mut Scoreboard>
 ) {
     for (_entity, music_timer, _dummy) in timer.iter() {
         for (entity, note) in query_note.iter() {
@@ -278,6 +290,9 @@ pub fn despawn_note(
                 Press4Key::Fourth => KeyCode::Slash,
                 _ => KeyCode::Key0
             };
+
+            let mut score = score.single_mut();
+
             //Judgement : Perfect 0.04167sec (DJMAX V Respect)
             //            Great   0.09000sec
             if key_input.just_pressed(key) && (!music_timer.timer.paused()) {
@@ -285,16 +300,19 @@ pub fn despawn_note(
                 if (note.timing as f32 / 1000. + 0.04167 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < music_timer.timer.elapsed_secs()) {
                     println!("note timing : {}", note.timing as f32 / 1000.);
                     commands.entity(entity).despawn();
+                    score.perfect += 1;
                     println!("perfect {}", note.timing as f32 / 1000.);
                 } else if (note.timing as f32 / 1000. + 0.09 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < music_timer.timer.elapsed_secs()) {
                     println!("note timing : {}", note.timing as f32 / 1000.);
                     commands.entity(entity).despawn();
+                    score.great += 1;
                     println!("great {}", note.timing as f32 / 1000.);
                 }
             }
             
             if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
                 commands.entity(entity).despawn();
+                score.miss += 1;
                 println!("miss {}", music_timer.timer.elapsed_secs());
             }
         }
@@ -429,21 +447,98 @@ pub fn setup_background_text(
             ],
             ..default()
         },
-        transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
+        //transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
         ..default()
     })
     .insert(TimerText);
+
+    commands.spawn_bundle(TextBundle {
+        style: Style {
+            position_type: PositionType::Absolute,
+            align_self: AlignSelf::FlexEnd,
+            position: bevy::math::Rect::<bevy::ui::Val> { top: Val::Px(30.), ..Default::default() },
+            ..default()
+        },
+        text: Text { 
+            sections: vec![
+                TextSection {
+                    value: "Perfect : ".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                        ..default()
+                    },
+                },
+                
+                TextSection {
+                    value: "0".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+
+                TextSection {
+                    value: "\nGreat : ".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+                TextSection {
+                    value: "0".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+
+                TextSection {
+                    value: "\nMiss : ".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+                TextSection {
+                    value: "0".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                }
+            ],
+            ..default()
+        },
+        //transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
+        ..default()
+    }).insert(Scoreboard {perfect:0, great:0, miss:0});
+
 }
 
 pub fn update_background_text(
-    mut commands: Commands,
     mut query: Query<(&mut Text, With<TimerText>)>,
-    timer: Query<(&MusicTimer, Without<Hold>)>
+    timer: Query<(&MusicTimer, Without<Hold>)>,
 ) {
     let (music_timer, _hold) = timer.single();
-    for (mut text, _timer_text) in query.iter_mut() {
-        text.sections[1].value = music_timer.timer.elapsed_secs().to_string();
+    for (mut time_text, _timer_text) in query.iter_mut() {
+        time_text.sections[1].value = music_timer.timer.elapsed_secs().to_string();
     }
+}
+
+pub fn update_scoreboard(
+    mut score_query: Query<(&mut Text, &Scoreboard)>
+) {
+        let (mut score_text, scoreboard) = score_query.single_mut();
+        score_text.sections[1].value = scoreboard.perfect.to_string();
+        score_text.sections[3].value = scoreboard.great.to_string();
+        score_text.sections[5].value = scoreboard.miss.to_string();
 }
 
 //init system
@@ -489,6 +584,7 @@ pub fn control_audio(
     }
 }
 
+//for debug
 pub fn _show_playing_timer(
     mut timer: Query<(Entity, &MusicTimer, Without<Hold>)>
 ) {
@@ -561,7 +657,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         note_type: NoteType::Short,
         press_key: Press4Key::First,
         timing: 0,
-        speed: 10.0,
+        speed: 17.0,
     };
     println!("parsed string: {}", string.trim());
     for c in string.chars() {
