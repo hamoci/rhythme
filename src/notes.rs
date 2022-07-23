@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::sprite::Rect;
+use std::collections::VecDeque;
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -7,6 +7,8 @@ use std::fs::File;
 
 const FRAME: f32 = 1.0/60.0;
 const STANDARD_NOTE_SPEED: f32 = 100.;
+const HOLD_TIME: f32 = 3000.;
+const MAX_MUSIC_LENGTH: f32 = 600000.;
 
 pub struct FontResource {
     font: Handle<Font>,
@@ -107,7 +109,7 @@ pub enum GameStage {
 
 #[derive(Component)]
 pub struct Chart {
-    notes: Vec<Note>
+    notes: VecDeque<Note>
 }
 
 #[derive(Component)]
@@ -131,6 +133,15 @@ pub struct Scoreboard {
     miss: usize,
 }
 
+#[derive(Component)]
+pub struct FirstLane;
+#[derive(Component)]
+pub struct SecondLane;
+#[derive(Component)]
+pub struct ThirdLane;
+#[derive(Component)]
+pub struct FourthLane;
+
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
@@ -151,7 +162,11 @@ impl Plugin for NotePlugin {
 
             .add_system(control_audio)
 
-            .add_system(spawn_note)
+            .add_system(spawn_note_0)
+            .add_system(spawn_note_1)
+            .add_system(spawn_note_2)
+            .add_system(spawn_note_3)
+
             .add_system(despawn_note)
             .add_system(move_note)
 
@@ -214,48 +229,107 @@ pub fn game_ticking(
     }
 }
 
-pub fn spawn_note(
+//-151.5
+pub fn spawn_note_0(
     mut commands: Commands,
     materials: Res<NoteResource>,
-    mut query_entity: Query<(Entity, &Chart)>
+    mut query_entity: Query<(Entity, &mut Chart, With<FirstLane>)>,
+    timer: Query<(&MusicTimer, Without<Hold>)>,
 ) {
-    //println!("")
-    for chart in query_entity.iter_mut() {
-        for note in chart.1.notes.iter() {
-            let material = match note.press_key {
-                Press4Key::First => materials.note_first.clone(),
-                Press4Key::Second => materials.note_second.clone(),
-                Press4Key::Third => materials.note_third.clone(),
-                Press4Key::Fourth => materials.note_fourth.clone(),
-            };
 
-            let position_x: f32 = match note.press_key {
-                Press4Key::First => -151.5,
-                Press4Key::Second => -50.5,
-                Press4Key::Third => 50.5,
-                Press4Key::Fourth => 151.5,
-            };
-            // -350 : Judgement line
-            let position_y: f32 = -350. + ((note.timing as f32) / 1000.) * (STANDARD_NOTE_SPEED * note.speed);
-
-            let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
-
-            commands.spawn_bundle(SpriteBundle {
-                texture: material,
-                transform: position,
-                ..Default::default()
-            }).insert(Note {
-                note_type: note.note_type.clone(),
-                press_key: note.press_key.clone(),
-                timing: note.timing,
-                speed: note.speed,
-            });
+    for (entity, mut query, _lane) in query_entity.iter_mut() {
+        let (music_timer, _hold) = timer.single();
+        let material = materials.note_first.clone();
+        if query.notes.is_empty() {
+            commands.entity(entity).despawn();
+            return;
         }
-    }
-    for chart in query_entity.iter_mut() {
-        commands.entity(chart.0).despawn();
+        spawn_note(&mut commands, material, &mut query, -151.5, music_timer);
     }
 
+}
+
+//-50.5
+pub fn spawn_note_1(
+    mut commands: Commands,
+    materials: Res<NoteResource>,
+    mut query_entity: Query<(Entity, &mut Chart, With<SecondLane>)>,
+    timer: Query<(&MusicTimer, Without<Hold>)>, 
+) {
+    for (entity, mut query, _lane) in query_entity.iter_mut() {
+        let (music_timer, _hold) = timer.single();
+        let material = materials.note_second.clone();
+        if query.notes.is_empty() {
+            commands.entity(entity).despawn();
+            return;
+        }
+        spawn_note(&mut commands, material, &mut query, -50.5, music_timer);
+    }
+}
+
+//50.5
+pub fn spawn_note_2(
+    mut commands: Commands,
+    materials: Res<NoteResource>,
+    mut query_entity: Query<(Entity, &mut Chart, With<ThirdLane>)>,
+    timer: Query<(&MusicTimer, Without<Hold>)>,
+) {
+    for (entity, mut query, _lane) in query_entity.iter_mut() {
+        let (music_timer, _hold) = timer.single();
+        let material = materials.note_third.clone();
+        if query.notes.is_empty() {
+            commands.entity(entity).despawn();
+            return;
+        }
+        spawn_note(&mut commands, material, &mut query, 50.5, music_timer);
+    }
+}
+
+//151.5
+pub fn spawn_note_3(
+    mut commands: Commands,
+    materials: Res<NoteResource>,
+    mut query_entity: Query<(Entity, &mut Chart, With<FourthLane>)>,
+    timer: Query<(&MusicTimer, Without<Hold>)>,
+) {
+    for (entity, mut query, _lane) in query_entity.iter_mut() {
+        let (music_timer, _hold) = timer.single();
+        let material = materials.note_fourth.clone();
+        if query.notes.is_empty() {
+            commands.entity(entity).despawn();
+            return;
+        }
+        spawn_note(&mut commands, material, &mut query, 151.5, music_timer);
+    }
+}
+
+fn spawn_note(
+    commands: &mut Commands,
+    material: Handle<Image>,
+    chart: &mut Chart,
+    position_x: f32,
+    timer: &MusicTimer,
+) {
+    // -350 : Judgement line. (STANDARD_NOTE_SPEED * note.speed) = 1초에 움직이는 거리. 즉 생성할때 chart.notes[0].timing / 1000초만큼 이동해야 판정선에 닿도록 함
+    // y가 530보다 큰 것은 생성하지 않음
+    let position_y: f32 = -350. + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs()) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+
+    if position_y <= 530.{
+        println!("Note spawned");
+        println!("{}", position_y);
+        let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
+        commands.spawn_bundle(SpriteBundle {
+            texture: material,
+            transform: position,
+            ..Default::default()
+        }).insert(Note {
+            note_type: chart.notes[0].note_type.clone(),
+            press_key: chart.notes[0].press_key.clone(),
+            timing: chart.notes[0].timing,
+            speed: chart.notes[0].speed,
+        });
+        chart.notes.pop_front();
+    }
 }
 
 pub fn move_note(
@@ -263,13 +337,13 @@ pub fn move_note(
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     time: Res<Time>
 ) {
-    for (_entity, music_timer, _dummy) in timer.iter() {
-        for (_entity, note, mut transform) in query_note.iter_mut() {
-            if (music_timer.timer.elapsed_secs() > 0.) && (!music_timer.timer.paused()) {
-                transform.translation.y -= time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
-            }
+    let (_entity, music_timer, _dummy) = timer.single();
+    for (_entity, note, mut transform) in query_note.iter_mut() {
+        if !music_timer.timer.paused() && music_timer.timer.elapsed_secs() > 0. {
+            transform.translation.y -= time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
         }
     }
+    
 }
 
 
@@ -302,7 +376,7 @@ pub fn despawn_note(
                     commands.entity(entity).despawn();
                     score.perfect += 1;
                     println!("perfect {}", note.timing as f32 / 1000.);
-                } else if (note.timing as f32 / 1000. + 0.09 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < music_timer.timer.elapsed_secs()) {
+                } else if (note.timing as f32 / 1000. +0.09  > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < music_timer.timer.elapsed_secs()) {
                     println!("note timing : {}", note.timing as f32 / 1000.);
                     commands.entity(entity).despawn();
                     score.great += 1;
@@ -315,8 +389,8 @@ pub fn despawn_note(
                 score.miss += 1;
                 println!("miss {}", music_timer.timer.elapsed_secs());
             }
-        }
-    } 
+        } 
+    }
 }
 
 pub fn spawn_keyboard_backlight(
@@ -620,7 +694,13 @@ pub fn pause_game(
 
 pub fn open_chart(mut commands: Commands) {
     let chart_file = File::open("assets/music/test.txt").expect("file not found");
-    let mut chart_vec: Vec<Note> = Vec::new();
+
+    //Note를 Spawn하거나 Despawn할 때 한번에 4개를 동시에 처리할 수 있도록 저장하는 Stack을 나눔
+    let mut chart_vec_0: VecDeque<Note> = VecDeque::new();
+    let mut chart_vec_1: VecDeque<Note> = VecDeque::new();
+    let mut chart_vec_2: VecDeque<Note> = VecDeque::new();
+    let mut chart_vec_3: VecDeque<Note> = VecDeque::new();
+
     let mut buffer = BufReader::new(chart_file);
     let mut line: String = String::new();
 
@@ -631,20 +711,56 @@ pub fn open_chart(mut commands: Commands) {
         if read_bytes == 0 {
             break;
         }
-        chart_vec.push(parse_file_string(&line).unwrap());
+        
+        let parsed_note = parse_file_string(&line).unwrap();
+        match parsed_note.press_key {
+            Press4Key::First => {
+                chart_vec_0.push_back(parsed_note);
+            },
+            Press4Key::Second => {
+                chart_vec_1.push_back(parsed_note);
+            },
+            Press4Key::Third => {
+                chart_vec_2.push_back(parsed_note);
+            },
+            Press4Key::Fourth => { 
+                chart_vec_3.push_back(parsed_note);
+            }
+        }
         line.clear();
     }
-    chart_vec.sort_by(|a, b| a.timing.cmp(&b.timing));
-    let chart = Chart {
-        notes: chart_vec,
-    };
-    commands.spawn().insert(chart);
 
-    let music_timer = MusicTimer {timer: Timer::from_seconds(200., false)};
+    //먼저 눌러야하는 순으로 정렬하여 나중에 spawn_note system에서 사용이 더 용이하도록 함
+    chart_vec_0.make_contiguous().sort_by(|a, b| a.timing.cmp(&b.timing));
+    chart_vec_1.make_contiguous().sort_by(|a, b| a.timing.cmp(&b.timing));
+    chart_vec_2.make_contiguous().sort_by(|a, b| a.timing.cmp(&b.timing));
+    chart_vec_3.make_contiguous().sort_by(|a, b| a.timing.cmp(&b.timing));
+
+    let chart_0 = Chart {
+        notes: chart_vec_0,
+    };
+    let chart_1 = Chart {
+        notes: chart_vec_1,
+    };
+    let chart_2 = Chart {
+        notes: chart_vec_2,
+    };
+    let chart_3 = Chart {
+        notes: chart_vec_3,
+    };
+
+    //Resource가 아닌 Entity로써 Chart를 관리하여 수정, 삭제를 용이하게 함
+    commands.spawn().insert(chart_0).insert(FirstLane);
+    commands.spawn().insert(chart_1).insert(SecondLane);
+    commands.spawn().insert(chart_2).insert(ThirdLane);
+    commands.spawn().insert(chart_3).insert(FourthLane);
+
+    //Music은 최대 MAX_MUSIC_LENGTH / 1000 만큼의 길이를 가짐
+    let music_timer = MusicTimer {timer: Timer::from_seconds(MAX_MUSIC_LENGTH / 1000., false)};
     commands.spawn().insert(music_timer);
 
-    //게임시작하고 3초대기
-    let hold_timer = MusicTimer { timer: Timer::from_seconds(3., false)}; 
+    //게임시작하고 HOLD_TIME / 1000만큼 대기
+    let hold_timer = MusicTimer { timer: Timer::from_seconds(HOLD_TIME / 1000., false)}; 
     commands.spawn().insert(hold_timer).insert(Hold);
 
 }

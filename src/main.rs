@@ -1,7 +1,7 @@
 use bevy::{input::system::exit_on_esc_system, prelude::*};
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin};
 use bevy_inspector_egui::WorldInspectorPlugin;
-use notes::NotePlugin;
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 
 mod notes;
 
@@ -26,6 +26,7 @@ fn main() {
    // app.add_startup_system(notes::playing_audio);
     app.add_plugin(notes::NotePlugin);
     //app.add_system(notes::print_keyboard_event_system); // for debug
+    app.add_plugin(FrameTimeDiagnosticsPlugin::default()); // for debug
     app.run();
 }
 
