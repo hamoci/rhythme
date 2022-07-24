@@ -142,6 +142,9 @@ pub struct ThirdLane;
 #[derive(Component)]
 pub struct FourthLane;
 
+#[derive(Component)]
+
+
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
 //File에 audio, 채보, audio info에 대해 넣어야할듯
 
@@ -167,7 +170,11 @@ impl Plugin for NotePlugin {
             .add_system(spawn_note_2)
             .add_system(spawn_note_3)
 
-            .add_system(despawn_note)
+            .add_system(despawn_note_0)
+            .add_system(despawn_note_1)
+            .add_system(despawn_note_2)
+            .add_system(despawn_note_3)
+
             .add_system(move_note)
 
             .add_system(spawn_keyboard_backlight)
@@ -315,8 +322,8 @@ fn spawn_note(
     let position_y: f32 = -350. + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs()) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
 
     if position_y <= 530.{
-        println!("Note spawned");
-        println!("{}", position_y);
+        //println!("Note spawned");
+        //println!("{}", position_y);
         let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
         commands.spawn_bundle(SpriteBundle {
             texture: material,
@@ -346,50 +353,124 @@ pub fn move_note(
     
 }
 
+fn despawn_note(
+    commands: &mut Commands,
+    input_key: Input<KeyCode>,
+    key_code: KeyCode,
+    note: &Note,
+    music_timer: &MusicTimer,
+    mut score: &mut Scoreboard,
+    entity: Entity
+) -> bool {
+    //Judgement : Perfect 0.04167sec (DJMAX V Respect)
+    //            Great   0.09000sec
+    if input_key.just_pressed(key_code) && (!music_timer.timer.paused()) {
+        //println!("current timer: {}", music_timer.timer.elapsed_secs());
+        if (note.timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
+            //println!("note timing : {}", note.timing as f32 / 1000.);
+            commands.entity(entity).despawn();
+            score.perfect += 1;
+            //println!("perfect {}", note.timing as f32 / 1000.);
+            return true;
+        } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
+            //println!("note timing : {}", note.timing as f32 / 1000.);
+            commands.entity(entity).despawn();
+            score.great += 1;
+            //println!("great {}", note.timing as f32 / 1000.);
+            return true;
+        }
+    }
+    
+    if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
+        commands.entity(entity).despawn();
+        score.miss += 1;
+        println!("miss {}", music_timer.timer.elapsed_secs());
+        return true;
+    }
+    false
+}
 
-
-pub fn despawn_note(
+//'Z'
+pub fn despawn_note_0(
     mut commands: Commands,
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>
 ) {
-    for (_entity, music_timer, _dummy) in timer.iter() {
-        for (entity, note) in query_note.iter() {
-            let key: KeyCode = match note.press_key {
-                Press4Key::First => KeyCode::Z,
-                Press4Key::Second => KeyCode::X,
-                Press4Key::Third => KeyCode::Period,
-                Press4Key::Fourth => KeyCode::Slash,
-                _ => KeyCode::Key0
-            };
+    let (_entity, music_timer, _hold) = timer.single();
+    let mut scoreboard = score.single_mut();
+    for (entity, note) in query_note.iter() {
+        match note.press_key {
+            Press4Key::First => (),
+            _ => continue
+        };
+        //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
+        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
+        if nest == true { return; }
+    }
+}
 
-            let mut score = score.single_mut();
+//'X'
+pub fn despawn_note_1(
+    mut commands: Commands,
+    query_note: Query<(Entity, &Note)>,
+    key_input: Res<Input<KeyCode>>,
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
+    mut score: Query<&mut Scoreboard>
+) {
+    let (_entity, music_timer, _hold) = timer.single();
+    let mut scoreboard = score.single_mut();
+    for (entity, note) in query_note.iter() {
+        match note.press_key {
+            Press4Key::Second => (),
+            _ => continue
+        };
+        //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
+        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
+        if nest == true { return; }
+    }
+}
 
-            //Judgement : Perfect 0.04167sec (DJMAX V Respect)
-            //            Great   0.09000sec
-            if key_input.just_pressed(key) && (!music_timer.timer.paused()) {
-                //println!("current timer: {}", music_timer.timer.elapsed_secs());
-                if (note.timing as f32 / 1000. + 0.04167 > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 < music_timer.timer.elapsed_secs()) {
-                    println!("note timing : {}", note.timing as f32 / 1000.);
-                    commands.entity(entity).despawn();
-                    score.perfect += 1;
-                    println!("perfect {}", note.timing as f32 / 1000.);
-                } else if (note.timing as f32 / 1000. +0.09  > music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 < music_timer.timer.elapsed_secs()) {
-                    println!("note timing : {}", note.timing as f32 / 1000.);
-                    commands.entity(entity).despawn();
-                    score.great += 1;
-                    println!("great {}", note.timing as f32 / 1000.);
-                }
-            }
-            
-            if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
-                commands.entity(entity).despawn();
-                score.miss += 1;
-                println!("miss {}", music_timer.timer.elapsed_secs());
-            }
-        } 
+//'.'
+pub fn despawn_note_2(
+    mut commands: Commands,
+    query_note: Query<(Entity, &Note)>,
+    key_input: Res<Input<KeyCode>>,
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
+    mut score: Query<&mut Scoreboard>
+) {
+    let (_entity, music_timer, _hold) = timer.single();
+    let mut scoreboard = score.single_mut();
+    for (entity, note) in query_note.iter() {
+        match note.press_key {
+            Press4Key::Third => (),
+            _ => continue
+        };
+        //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
+        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
+        if nest == true { return; }
+    }
+}
+
+//'/'
+pub fn despawn_note_3(
+    mut commands: Commands,
+    query_note: Query<(Entity, &Note)>,
+    key_input: Res<Input<KeyCode>>,
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
+    mut score: Query<&mut Scoreboard>
+) {
+    let (_entity, music_timer, _hold) = timer.single();
+    let mut scoreboard = score.single_mut();
+    for (entity, note) in query_note.iter() {
+        match note.press_key {
+            Press4Key::Fourth => (),
+            _ => continue
+        };
+        //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
+        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
+        if nest == true { return; }
     }
 }
 
@@ -821,4 +902,4 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
     } else {
         Err("Not parsed")
     }
-} 
+}

@@ -26,7 +26,7 @@ fn main() {
    // app.add_startup_system(notes::playing_audio);
     app.add_plugin(notes::NotePlugin);
     //app.add_system(notes::print_keyboard_event_system); // for debug
-    app.add_plugin(FrameTimeDiagnosticsPlugin::default()); // for debug
+    //app.add_plugin(FrameTimeDiagnosticsPlugin::default()); // for debug
     app.run();
 }
 
@@ -40,5 +40,5 @@ fn camera_setup(mut commands: Commands) {
 fn frame_limit(
     mut setting: ResMut<bevy_framepace::FramepacePlugin>
 ) {
-    setting.framerate_limit = bevy_framepace::FramerateLimit::Auto;
+    setting.framerate_limit = bevy_framepace::FramerateLimit::Manual(60);
 }
