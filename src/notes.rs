@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::render::view::visibility;
 use std::collections::VecDeque;
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
@@ -59,6 +60,28 @@ impl FromWorld for NoteResource {
         };
 
         note_resource
+    }
+}
+
+pub struct JudgeResource {
+    perfect: Handle<Image>,
+    great: Handle<Image>,
+    miss: Handle<Image>
+}
+
+impl FromWorld for JudgeResource {
+    fn from_world(world: &mut World) -> Self {
+
+        let world = world.cell();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+
+        let judge_resource = JudgeResource {
+            perfect: asset_server.load("image/perfect.png"),
+            great: asset_server.load("image/great.png"),
+            miss: asset_server.load("image/miss.png"),
+        };
+
+        judge_resource        
     }
 }
 
@@ -142,7 +165,9 @@ pub struct ThirdLane;
 #[derive(Component)]
 pub struct FourthLane;
 
-#[derive(Component)]
+pub struct EventAnimation {
+    judge: JudgeAccuracy,
+}
 
 
 //Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
@@ -154,7 +179,11 @@ impl Plugin for NotePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NoteResource>()
             .init_resource::<FontResource>()
+            .init_resource::<JudgeResource>()
             .add_audio_channel::<MainTrackChannel>()
+            
+            .add_event::<EventAnimation>()
+
             .add_startup_system(setup_audio_channel)
             .add_startup_system(setup_background_text)
             .add_startup_system(spawn_background)
@@ -361,7 +390,7 @@ fn despawn_note(
     music_timer: &MusicTimer,
     mut score: &mut Scoreboard,
     entity: Entity
-) -> bool {
+) -> (bool, JudgeAccuracy) {
     //Judgement : Perfect 0.04167sec (DJMAX V Respect)
     //            Great   0.09000sec
     if input_key.just_pressed(key_code) && (!music_timer.timer.paused()) {
@@ -371,13 +400,13 @@ fn despawn_note(
             commands.entity(entity).despawn();
             score.perfect += 1;
             //println!("perfect {}", note.timing as f32 / 1000.);
-            return true;
+            return (true, JudgeAccuracy::Perfect);
         } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
             //println!("note timing : {}", note.timing as f32 / 1000.);
             commands.entity(entity).despawn();
             score.great += 1;
             //println!("great {}", note.timing as f32 / 1000.);
-            return true;
+            return (true, JudgeAccuracy::Great);
         }
     }
     
@@ -385,9 +414,9 @@ fn despawn_note(
         commands.entity(entity).despawn();
         score.miss += 1;
         println!("miss {}", music_timer.timer.elapsed_secs());
-        return true;
+        return (true, JudgeAccuracy::Miss);
     }
-    false
+    (false, JudgeAccuracy::Miss)
 }
 
 //'Z'
@@ -396,7 +425,8 @@ pub fn despawn_note_0(
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
-    mut score: Query<&mut Scoreboard>
+    mut score: Query<&mut Scoreboard>,
+    mut event_animation: EventWriter<EventAnimation>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -406,8 +436,11 @@ pub fn despawn_note_0(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
-        if nest == true { return; }
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
+        if nest == true { 
+            event_animation.send(EventAnimation {judge: accuracy});
+            return;
+        }
     }
 }
 
@@ -417,7 +450,8 @@ pub fn despawn_note_1(
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
-    mut score: Query<&mut Scoreboard>
+    mut score: Query<&mut Scoreboard>,
+    mut event_animation: EventWriter<EventAnimation>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -427,8 +461,11 @@ pub fn despawn_note_1(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
-        if nest == true { return; }
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
+        if nest == true { 
+            event_animation.send(EventAnimation {judge: accuracy});
+            return;
+        }
     }
 }
 
@@ -438,7 +475,8 @@ pub fn despawn_note_2(
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
-    mut score: Query<&mut Scoreboard>
+    mut score: Query<&mut Scoreboard>,
+    mut event_animation: EventWriter<EventAnimation>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -448,8 +486,11 @@ pub fn despawn_note_2(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
-        if nest == true { return; }
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
+        if nest == true {
+            event_animation.send(EventAnimation {judge: accuracy});
+            return; 
+        }
     }
 }
 
@@ -459,7 +500,8 @@ pub fn despawn_note_3(
     query_note: Query<(Entity, &Note)>,
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
-    mut score: Query<&mut Scoreboard>
+    mut score: Query<&mut Scoreboard>,
+    mut event_animation: EventWriter<EventAnimation>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -469,8 +511,11 @@ pub fn despawn_note_3(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let nest = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
-        if nest == true { return; }
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
+        if nest == true {
+            event_animation.send(EventAnimation {judge: accuracy});
+            return; 
+        }
     }
 }
 
@@ -541,6 +586,100 @@ pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy:
     for event in keyboard_input_events.iter() {
         info!("{:?}", event);
     }
+}
+
+pub enum JudgeAccuracy {
+    Perfect = 300,
+    Great = 100,
+    Good = 50,
+    Miss = 0,
+}
+
+
+
+#[derive(Component)]
+pub struct Perfect;
+#[derive(Component)]
+pub struct Great;
+#[derive(Component)]
+pub struct Miss;
+#[derive(Component)]
+pub struct JudgeTimer(Timer);
+
+//x:0, y:-200
+pub fn setup_judgement(
+    mut commands: Commands,
+    materials: Res<JudgeResource>,
+) {
+    let judge_transform = Transform::from_translation(Vec3::new(0., -200., 4.));
+    //100, 30
+    let size: Option<Vec2> = Option::Some(Vec2::new(70., 10.));
+    let timer1 = JudgeTimer(Timer::from_seconds(3.0, false));
+    let timer2 = JudgeTimer(Timer::from_seconds(3.0, false));
+    let timer3 = JudgeTimer(Timer::from_seconds(3.0, false));
+
+    commands.spawn_bundle( SpriteBundle {
+        texture: materials.perfect.clone(),
+        transform: judge_transform,
+        sprite: Sprite { custom_size: size, ..Default::default() },
+        visibility: Visibility { is_visible: false },
+        ..Default::default()
+    }).insert(Perfect).insert(timer1);
+
+    commands.spawn_bundle( SpriteBundle {
+        texture: materials.great.clone(),
+        transform: judge_transform,
+        sprite: Sprite { custom_size: size, ..Default::default() },
+        visibility: Visibility { is_visible: false },
+        ..Default::default()
+    }).insert(Great).insert(timer2);
+
+    commands.spawn_bundle( SpriteBundle {
+        texture: materials.miss.clone(),
+        transform: judge_transform,
+        sprite: Sprite { custom_size: size, ..Default::default() },
+        visibility: Visibility { is_visible: false },
+        ..Default::default()
+    }).insert(Miss).insert(timer3);
+
+}
+
+pub fn spawn_judgement(
+    mut events: EventReader<EventAnimation>,
+    
+    mut query_perfect: Query<(&mut Sprite, &mut Visibility ,&Perfect)>,
+    mut query_great: Query<(&mut Sprite, &mut Visibility, &Great)>,
+    mut query_miss: Query<(&mut Sprite, &mut Visibility, &Miss)>
+) {
+    if events.is_empty() { return; }
+    let (mut perfect_sprite, mut perfect_visible, _perfect) = query_perfect.single_mut();
+    let (mut great_sprite, mut great_visible, _great) = query_great.single_mut();
+    let (mut miss_sprite, mut miss_visible, _miss) = query_miss.single_mut();
+    for accuracy in events.iter() {
+        match accuracy {
+            EventAnimation { judge: JudgeAccuracy::Perfect } => {
+                perfect_visible.is_visible = true;
+                return;
+            }
+            EventAnimation { judge: JudgeAccuracy::Great } => {great_visible.is_visible = true; return;}
+            EventAnimation { judge: JudgeAccuracy::Miss } => {miss_visible.is_visible = true; return;}
+            _ => (),
+        }
+    }
+}
+
+pub fn update_judgement(
+    mut query_perfect: Query<(&mut Sprite, &Perfect)>,
+    mut query_great: Query<(&mut Sprite, &Great)>,
+    mut query_miss: Query<(&mut Sprite, &Miss)>
+) {
+    
+}
+
+pub fn despawn_judgement(
+
+) {
+
 }
 
 #[derive(Component, Default, Clone)]
