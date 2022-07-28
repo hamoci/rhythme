@@ -209,6 +209,9 @@ impl Plugin for NotePlugin {
             .add_system(spawn_keyboard_backlight)
             .add_system(despawn_keyboard_backlight)
 
+            .add_system(spawn_judgement)
+            .add_system(update_judgement)
+
             .add_system(pause_game);
            // app.add_system(_show_playing_timer); // for debug
     }
@@ -605,81 +608,100 @@ pub struct Great;
 pub struct Miss;
 #[derive(Component)]
 pub struct JudgeTimer(Timer);
+#[derive(Component)]
+pub struct Scale(f32);
+
 
 //x:0, y:-200
-pub fn setup_judgement(
+pub fn spawn_judgement(
     mut commands: Commands,
+    mut events: EventReader<EventAnimation>,
     materials: Res<JudgeResource>,
 ) {
-    let judge_transform = Transform::from_translation(Vec3::new(0., -200., 4.));
-    //100, 30
-    let size: Option<Vec2> = Option::Some(Vec2::new(70., 10.));
-    let timer1 = JudgeTimer(Timer::from_seconds(3.0, false));
-    let timer2 = JudgeTimer(Timer::from_seconds(3.0, false));
-    let timer3 = JudgeTimer(Timer::from_seconds(3.0, false));
-
-    commands.spawn_bundle( SpriteBundle {
-        texture: materials.perfect.clone(),
-        transform: judge_transform,
-        sprite: Sprite { custom_size: size, ..Default::default() },
-        visibility: Visibility { is_visible: false },
-        ..Default::default()
-    }).insert(Perfect).insert(timer1);
-
-    commands.spawn_bundle( SpriteBundle {
-        texture: materials.great.clone(),
-        transform: judge_transform,
-        sprite: Sprite { custom_size: size, ..Default::default() },
-        visibility: Visibility { is_visible: false },
-        ..Default::default()
-    }).insert(Great).insert(timer2);
-
-    commands.spawn_bundle( SpriteBundle {
-        texture: materials.miss.clone(),
-        transform: judge_transform,
-        sprite: Sprite { custom_size: size, ..Default::default() },
-        visibility: Visibility { is_visible: false },
-        ..Default::default()
-    }).insert(Miss).insert(timer3);
-
-}
-
-pub fn spawn_judgement(
-    mut events: EventReader<EventAnimation>,
-    
-    mut query_perfect: Query<(&mut Sprite, &mut Visibility ,&Perfect)>,
-    mut query_great: Query<(&mut Sprite, &mut Visibility, &Great)>,
-    mut query_miss: Query<(&mut Sprite, &mut Visibility, &Miss)>
-) {
-    if events.is_empty() { return; }
-    let (mut perfect_sprite, mut perfect_visible, _perfect) = query_perfect.single_mut();
-    let (mut great_sprite, mut great_visible, _great) = query_great.single_mut();
-    let (mut miss_sprite, mut miss_visible, _miss) = query_miss.single_mut();
+    let mut judge_transform = Transform::from_translation(Vec3::new(0., -200., 4.));
     for accuracy in events.iter() {
         match accuracy {
-            EventAnimation { judge: JudgeAccuracy::Perfect } => {
-                perfect_visible.is_visible = true;
+            EventAnimation {judge : JudgeAccuracy::Perfect} => {
+                let timer = JudgeTimer(Timer::from_seconds(1.5, false));
+                let scale = Scale(1.0);
+                judge_transform.scale = Vec3::splat(scale.0);
+                commands.spawn_bundle( SpriteBundle {
+                    texture: materials.perfect.clone(),
+                    transform: judge_transform,
+                    ..Default::default()
+                }).insert(Perfect).insert(timer).insert(scale);
                 return;
-            }
-            EventAnimation { judge: JudgeAccuracy::Great } => {great_visible.is_visible = true; return;}
-            EventAnimation { judge: JudgeAccuracy::Miss } => {miss_visible.is_visible = true; return;}
-            _ => (),
+            },
+    
+            EventAnimation {judge : JudgeAccuracy::Great} => {
+                let timer = JudgeTimer(Timer::from_seconds(1.5, false));
+                let scale = Scale(1.0);
+                judge_transform.scale = Vec3::splat(scale.0);
+                commands.spawn_bundle( SpriteBundle {
+                    texture: materials.great.clone(),
+                    transform: judge_transform,
+                    ..Default::default()
+                }).insert(Great).insert(timer).insert(scale);
+                return;
+            },
+    
+            EventAnimation {judge : JudgeAccuracy::Miss} => {
+                let timer = JudgeTimer(Timer::from_seconds(1.5, false));
+                let scale = Scale(1.0);
+                judge_transform.scale = Vec3::splat(scale.0);
+                commands.spawn_bundle( SpriteBundle {
+                    texture: materials.miss.clone(),
+                    transform: judge_transform,
+                    ..Default::default()
+                }).insert(Miss).insert(timer).insert(scale);
+                return;
+            },
+
+            _ => return
         }
     }
 }
 
 pub fn update_judgement(
-    mut query_perfect: Query<(&mut Sprite, &Perfect)>,
-    mut query_great: Query<(&mut Sprite, &Great)>,
-    mut query_miss: Query<(&mut Sprite, &Miss)>
+    mut commands: Commands,
+    time: Res<Time>,
+    mut set: ParamSet<(
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Perfect)>,
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Great)>,
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Miss)>
+    )>
+
 ) {
-    
-}
-
-pub fn despawn_judgement(
-
-) {
-
+    for (entity, mut transform, mut scale, mut timer, _dummy) in set.p0().iter_mut() {
+        timer.0.tick(time.delta());
+        if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
+            transform.scale = Vec3::splat(scale.0);
+            scale.0 -= 0.02;
+        }
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+    for (entity, mut transform, mut scale, mut timer,  _dummy) in set.p1().iter_mut() {
+        timer.0.tick(time.delta());
+        if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
+            transform.scale = Vec3::splat(scale.0);
+            scale.0 -= 0.02;
+        }
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }   
+    for (entity, mut transform, mut scale, mut timer, _dummy) in set.p2().iter_mut() {
+        timer.0.tick(time.delta());
+        if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
+            transform.scale = Vec3::splat(scale.0);
+            scale.0 -= 0.02;
+        }
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 #[derive(Component, Default, Clone)]
