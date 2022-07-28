@@ -598,14 +598,6 @@ pub enum JudgeAccuracy {
     Miss = 0,
 }
 
-
-
-#[derive(Component)]
-pub struct Perfect;
-#[derive(Component)]
-pub struct Great;
-#[derive(Component)]
-pub struct Miss;
 #[derive(Component)]
 pub struct JudgeTimer(Timer);
 #[derive(Component)]
@@ -629,7 +621,7 @@ pub fn spawn_judgement(
                     texture: materials.perfect.clone(),
                     transform: judge_transform,
                     ..Default::default()
-                }).insert(Perfect).insert(timer).insert(scale);
+                }).insert(timer).insert(scale);
                 return;
             },
     
@@ -641,7 +633,7 @@ pub fn spawn_judgement(
                     texture: materials.great.clone(),
                     transform: judge_transform,
                     ..Default::default()
-                }).insert(Great).insert(timer).insert(scale);
+                }).insert(timer).insert(scale);
                 return;
             },
     
@@ -653,7 +645,7 @@ pub fn spawn_judgement(
                     texture: materials.miss.clone(),
                     transform: judge_transform,
                     ..Default::default()
-                }).insert(Miss).insert(timer).insert(scale);
+                }).insert(timer).insert(scale);
                 return;
             },
 
@@ -665,41 +657,29 @@ pub fn spawn_judgement(
 pub fn update_judgement(
     mut commands: Commands,
     time: Res<Time>,
-    mut set: ParamSet<(
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Perfect)>,
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Great)>,
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer, &Miss)>
-    )>
+    mut query: Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>
+
+    /*mut set: ParamSet<(
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>,
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>,
+        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>
+    )>*/
 
 ) {
-    for (entity, mut transform, mut scale, mut timer, _dummy) in set.p0().iter_mut() {
-        timer.0.tick(time.delta());
-        if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
-            transform.scale = Vec3::splat(scale.0);
-            scale.0 -= 0.02;
-        }
-        if timer.0.finished() {
-            commands.entity(entity).despawn();
-        }
+    let mut query_number = 0;
+    for(_dummy, _dummy1, _dummy2, _dummy3) in query.iter_mut() {
+        query_number += 1;
     }
-    for (entity, mut transform, mut scale, mut timer,  _dummy) in set.p1().iter_mut() {
+
+    for (entity, mut transform, mut scale, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
         if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
             transform.scale = Vec3::splat(scale.0);
             scale.0 -= 0.02;
         }
-        if timer.0.finished() {
+        if timer.0.finished() || query_number >= 2 {
             commands.entity(entity).despawn();
-        }
-    }   
-    for (entity, mut transform, mut scale, mut timer, _dummy) in set.p2().iter_mut() {
-        timer.0.tick(time.delta());
-        if timer.0.elapsed_secs() < 0.1 && scale.0 > 0.7 {
-            transform.scale = Vec3::splat(scale.0);
-            scale.0 -= 0.02;
-        }
-        if timer.0.finished() {
-            commands.entity(entity).despawn();
+            query_number -= 1;
         }
     }
 }
