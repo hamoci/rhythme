@@ -1,9 +1,10 @@
 use bevy::{input::system::exit_on_esc_system, prelude::*};
-use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin};
 use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 
 mod notes;
+mod audio;
 
 fn main() {
     let mut app = App::new();    
@@ -25,7 +26,8 @@ fn main() {
    // app.add_system(exit_on_esc_system);
    // app.add_startup_system(notes::playing_audio);
     app.add_plugin(notes::NotePlugin);
-    //app.add_system(notes::print_keyboard_event_system); // for debug
+    app.add_plugin(audio::GameAudioPlugin);
+       //app.add_system(notes::print_keyboard_event_system); // for debug
     //app.add_plugin(FrameTimeDiagnosticsPlugin::default()); // for debug
     app.run();
 }

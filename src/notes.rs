@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::view::visibility;
 use std::collections::VecDeque;
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
@@ -137,7 +136,7 @@ pub struct Chart {
 
 #[derive(Component)]
 pub struct MusicTimer {
-    timer: Timer,
+    pub timer: Timer,
 }
 
 #[derive(Component)]
@@ -169,10 +168,6 @@ pub struct EventAnimation {
     judge: JudgeAccuracy,
 }
 
-
-//Timer를 하나 만들고, audio읽어서 몇분짜리인지 확인. 그 후 File에서 채보를 불러옴
-//File에 audio, 채보, audio info에 대해 넣어야할듯
-
 pub struct NotePlugin;
 
 impl Plugin for NotePlugin {
@@ -180,11 +175,9 @@ impl Plugin for NotePlugin {
         app.init_resource::<NoteResource>()
             .init_resource::<FontResource>()
             .init_resource::<JudgeResource>()
-            .add_audio_channel::<MainTrackChannel>()
-            
+
             .add_event::<EventAnimation>()
 
-            .add_startup_system(setup_audio_channel)
             .add_startup_system(setup_background_text)
             .add_startup_system(spawn_background)
             .add_startup_system(open_chart)
@@ -192,7 +185,7 @@ impl Plugin for NotePlugin {
             .add_system(update_background_text)
             .add_system(update_scoreboard)
 
-            .add_system(control_audio)
+
 
             .add_system(spawn_note_0)
             .add_system(spawn_note_1)
@@ -658,13 +651,6 @@ pub fn update_judgement(
     mut commands: Commands,
     time: Res<Time>,
     mut query: Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>
-
-    /*mut set: ParamSet<(
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>,
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>,
-        Query<(Entity, &mut Transform, &mut Scale, &mut JudgeTimer)>
-    )>*/
-
 ) {
     let mut query_number = 0;
     for(_dummy, _dummy1, _dummy2, _dummy3) in query.iter_mut() {
@@ -684,32 +670,6 @@ pub fn update_judgement(
     }
 }
 
-#[derive(Component, Default, Clone)]
-pub struct MainTrackChannel;
-
-pub struct ChannelAudioState<T> {
-    stopped: bool,
-    paused: bool,
-    loop_started: bool,
-    volume: f32,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> Default for ChannelAudioState<T> {
-    fn default() -> Self {
-        ChannelAudioState {
-            volume: 0.1,    //Basic : 1
-            stopped: true,
-            paused: false,
-            loop_started: false,
-            _marker: std::marker::PhantomData::<T>::default(),
-        }
-    }
-}
-
-pub struct AudioResource {
-    main_track: Handle<AudioSource>,
-}
 
 pub fn setup_background_text(
     mut commands: Commands,
@@ -837,52 +797,12 @@ pub fn update_scoreboard(
         score_text.sections[5].value = scoreboard.miss.to_string();
 }
 
-//init system
-//Making Main SoundTrack Channel.(to play music)
-pub fn setup_audio_channel(
-    mut commands: Commands,
-    asset_server: ResMut<AssetServer>,
-) {
-    let sound_track = asset_server.load("music/test.mp3");
 
-    commands.insert_resource(AudioResource {main_track: sound_track});
-    commands.insert_resource(ChannelAudioState::<MainTrackChannel>::default());
-    
-}
 
-pub fn control_audio(
-    mut commands: Commands,
-    audio_channel: Res<AudioChannel<MainTrackChannel>>,
-    mut audio_state: ResMut<ChannelAudioState<MainTrackChannel>>,
-    audio_source: Res<AudioResource>,
-    hold_timer: Query<(&MusicTimer, Without<Hold>)>,
-) {
-    let (timer, _hold) = hold_timer.single();
-
-    if timer.timer.elapsed_secs() > 0.{
-        if audio_state.stopped == true {
-            audio_channel.play(audio_source.main_track.clone());
-            audio_channel.set_volume(audio_state.volume);
-            audio_state.stopped = false;
-            println!("Play Music");
-            return
-        }
-
-        if timer.timer.paused() && !audio_state.paused{
-            audio_channel.pause();
-            audio_state.paused = true;
-            println!("Music Paused");
-        } else if !timer.timer.paused() && audio_state.paused{
-            audio_channel.resume();
-            audio_state.paused = false;
-            println!("Music Resumed");
-        }
-    }
-}
 
 //for debug
 pub fn _show_playing_timer(
-    mut timer: Query<(Entity, &MusicTimer, Without<Hold>)>
+    timer: Query<(Entity, &MusicTimer, Without<Hold>)>
 ) {
     for (_entity, music_timer, _dummy) in timer.iter() {
         println!("{}", music_timer.timer.elapsed_secs());  
