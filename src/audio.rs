@@ -15,7 +15,8 @@ impl Plugin for GameAudioPlugin {
         .add_audio_channel::<KeySoundChannel1>()
         .add_audio_channel::<KeySoundChannel2>()
         .add_audio_channel::<KeySoundChannel3>()
-        .add_audio_channel::<KeySoundChannel4>();
+        .add_audio_channel::<KeySoundChannel4>()
+        .add_system(event_key_sound);
     }
 }
 
@@ -87,10 +88,42 @@ pub fn setup_audio_channel(
     
 }
 
-pub fn event_key_sound(
 
+
+pub fn event_key_sound(
+    audio_source: Res<AudioResource>,
+    key_channel1: Res<AudioChannel<KeySoundChannel1>>,
+    key_channel2: Res<AudioChannel<KeySoundChannel2>>,
+    key_channel3: Res<AudioChannel<KeySoundChannel3>>,
+    key_channel4: Res<AudioChannel<KeySoundChannel4>>,
+    mut audio_state1: ResMut<ChannelAudioState<KeySoundChannel1>>,
+    mut audio_state2: ResMut<ChannelAudioState<KeySoundChannel2>>,
+    mut audio_state3: ResMut<ChannelAudioState<KeySoundChannel3>>,
+    mut audio_state4: ResMut<ChannelAudioState<KeySoundChannel4>>,
+    mut event1: EventReader<notes::KeySound1>,
+    mut event2: EventReader<notes::KeySound2>,
+    mut event3: EventReader<notes::KeySound3>,
+    mut event4: EventReader<notes::KeySound4>,
 ) {
-    
+    for sound in event1.iter() {
+        key_channel1.play(audio_source.hit_sound1.clone());
+        key_channel1.set_volume(audio_state1.volume);
+    }
+
+    for sound in event2.iter() {
+        key_channel2.play(audio_source.hit_sound2.clone());
+        key_channel2.set_volume(audio_state2.volume);
+    }
+
+    for sound in event3.iter() {
+        key_channel3.play(audio_source.hit_sound3.clone());
+        key_channel3.set_volume(audio_state3.volume);
+    }
+
+    for sound in event4.iter() {
+        key_channel4.play(audio_source.hit_sound4.clone());
+        key_channel4.set_volume(audio_state4.volume);
+    }
 }
 
 pub fn control_main_track(

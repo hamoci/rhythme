@@ -168,6 +168,11 @@ pub struct EventAnimation {
     judge: JudgeAccuracy,
 }
 
+pub struct KeySound1;
+pub struct KeySound2;
+pub struct KeySound3;
+pub struct KeySound4;
+
 pub struct NotePlugin;
 
 impl Plugin for NotePlugin {
@@ -177,6 +182,10 @@ impl Plugin for NotePlugin {
             .init_resource::<JudgeResource>()
 
             .add_event::<EventAnimation>()
+            .add_event::<KeySound1>()
+            .add_event::<KeySound2>()
+            .add_event::<KeySound3>()
+            .add_event::<KeySound4>()
 
             .add_startup_system(setup_background_text)
             .add_startup_system(spawn_background)
@@ -422,7 +431,8 @@ pub fn despawn_note_0(
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
-    mut event_animation: EventWriter<EventAnimation>
+    mut event_animation: EventWriter<EventAnimation>,
+    mut event_key_sound: EventWriter<KeySound1>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -435,6 +445,9 @@ pub fn despawn_note_0(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
+            if accuracy != JudgeAccuracy::Miss {
+                event_key_sound.send(KeySound1);
+            }
             return;
         }
     }
@@ -447,7 +460,8 @@ pub fn despawn_note_1(
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
-    mut event_animation: EventWriter<EventAnimation>
+    mut event_animation: EventWriter<EventAnimation>,
+    mut event_key_sound: EventWriter<KeySound2>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -460,6 +474,9 @@ pub fn despawn_note_1(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
+            if accuracy != JudgeAccuracy::Miss {
+                event_key_sound.send(KeySound2);
+            }
             return;
         }
     }
@@ -472,7 +489,8 @@ pub fn despawn_note_2(
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
-    mut event_animation: EventWriter<EventAnimation>
+    mut event_animation: EventWriter<EventAnimation>,
+    mut event_key_sound: EventWriter<KeySound3>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -485,6 +503,9 @@ pub fn despawn_note_2(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
+            if accuracy != JudgeAccuracy::Miss {
+                event_key_sound.send(KeySound3);
+            }
             return; 
         }
     }
@@ -497,7 +518,8 @@ pub fn despawn_note_3(
     key_input: Res<Input<KeyCode>>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
-    mut event_animation: EventWriter<EventAnimation>
+    mut event_animation: EventWriter<EventAnimation>,
+    mut event_key_sound: EventWriter<KeySound4>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -510,6 +532,9 @@ pub fn despawn_note_3(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
+            if accuracy != JudgeAccuracy::Miss {
+                event_key_sound.send(KeySound4);
+            }
             return; 
         }
     }
@@ -584,6 +609,7 @@ pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy:
     }
 }
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum JudgeAccuracy {
     Perfect = 300,
     Great = 100,
