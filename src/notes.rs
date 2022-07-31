@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use std::collections::VecDeque;
-use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
@@ -84,6 +83,41 @@ impl FromWorld for JudgeResource {
     }
 }
 
+pub struct NumberResource {
+    zero: Handle<Image>,
+    one: Handle<Image>,
+    two: Handle<Image>,
+    three: Handle<Image>,
+    four: Handle<Image>,
+    five: Handle<Image>,
+    six: Handle<Image>,
+    seven: Handle<Image>,
+    eight: Handle<Image>,
+    nine: Handle<Image>,
+}
+
+impl FromWorld for NumberResource {
+    fn from_world(world: &mut World) -> Self {
+        let world = world.cell();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+
+        let number_resource = NumberResource {
+            zero: asset_server.load("image/number/0.png"),
+            one: asset_server.load("image/number/1.png"),
+            two: asset_server.load("image/number/2.png"),
+            three: asset_server.load("image/number/3.png"),
+            four: asset_server.load("image/number/4.png"),
+            five: asset_server.load("image/number/5.png"),
+            six: asset_server.load("image/number/6.png"),
+            seven: asset_server.load("image/number/7.png"),
+            eight: asset_server.load("image/number/8.png"),
+            nine: asset_server.load("image/number/9.png"),
+        };
+
+        number_resource
+    }
+}
+
 #[derive(Eq, PartialEq, Component, Clone)]
 pub enum Press4Key{
     First = 0,
@@ -145,6 +179,7 @@ pub struct Hold;
 #[derive(Component)]
 pub struct PausedText;
 
+//수정필요
 #[derive(Component)]
 pub struct TimerText;
 
@@ -164,6 +199,17 @@ pub struct ThirdLane;
 #[derive(Component)]
 pub struct FourthLane;
 
+#[derive(Component)]
+pub struct Combo(u32);
+
+//차후에 combo animation 구현 후 삭제
+#[derive(Component)]
+pub struct ComboText;
+
+pub struct EventCombo {
+    judge: JudgeAccuracy,
+}
+
 pub struct EventAnimation {
     judge: JudgeAccuracy,
 }
@@ -173,6 +219,7 @@ pub struct KeySound2;
 pub struct KeySound3;
 pub struct KeySound4;
 
+
 pub struct NotePlugin;
 
 impl Plugin for NotePlugin {
@@ -180,12 +227,14 @@ impl Plugin for NotePlugin {
         app.init_resource::<NoteResource>()
             .init_resource::<FontResource>()
             .init_resource::<JudgeResource>()
+            .init_resource::<NumberResource>()
 
             .add_event::<EventAnimation>()
             .add_event::<KeySound1>()
             .add_event::<KeySound2>()
             .add_event::<KeySound3>()
             .add_event::<KeySound4>()
+            .add_event::<EventCombo>()
 
             .add_startup_system(setup_background_text)
             .add_startup_system(spawn_background)
@@ -213,6 +262,9 @@ impl Plugin for NotePlugin {
 
             .add_system(spawn_judgement)
             .add_system(update_judgement)
+
+            .add_startup_system(setup_combo)
+            .add_system(update_combo_effect)
 
             .add_system(pause_game);
            // app.add_system(_show_playing_timer); // for debug
@@ -432,7 +484,8 @@ pub fn despawn_note_0(
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
-    mut event_key_sound: EventWriter<KeySound1>
+    mut event_key_sound: EventWriter<KeySound1>,
+    mut event_combo: EventWriter<EventCombo>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -445,6 +498,7 @@ pub fn despawn_note_0(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
+            event_combo.send( EventCombo{ judge: accuracy });
             if accuracy != JudgeAccuracy::Miss {
                 event_key_sound.send(KeySound1);
             }
@@ -461,7 +515,8 @@ pub fn despawn_note_1(
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
-    mut event_key_sound: EventWriter<KeySound2>
+    mut event_key_sound: EventWriter<KeySound2>,
+    mut event_combo: EventWriter<EventCombo>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -474,6 +529,7 @@ pub fn despawn_note_1(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
+            event_combo.send( EventCombo{ judge: accuracy });
             if accuracy != JudgeAccuracy::Miss {
                 event_key_sound.send(KeySound2);
             }
@@ -490,7 +546,8 @@ pub fn despawn_note_2(
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
-    mut event_key_sound: EventWriter<KeySound3>
+    mut event_key_sound: EventWriter<KeySound3>,
+    mut event_combo: EventWriter<EventCombo>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -503,6 +560,7 @@ pub fn despawn_note_2(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
+            event_combo.send( EventCombo{ judge: accuracy });
             if accuracy != JudgeAccuracy::Miss {
                 event_key_sound.send(KeySound3);
             }
@@ -519,7 +577,8 @@ pub fn despawn_note_3(
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
-    mut event_key_sound: EventWriter<KeySound4>
+    mut event_key_sound: EventWriter<KeySound4>,
+    mut event_combo: EventWriter<EventCombo>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -532,6 +591,7 @@ pub fn despawn_note_3(
         let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
+            event_combo.send( EventCombo{ judge: accuracy });
             if accuracy != JudgeAccuracy::Miss {
                 event_key_sound.send(KeySound4);
             }
@@ -735,6 +795,7 @@ pub fn setup_background_text(
     .insert(TimerText);
 
     commands.spawn_bundle(TextBundle {
+        node: Node {size: Vec2::new(500., 100.)},
         style: Style {
             position_type: PositionType::Absolute,
             align_self: AlignSelf::FlexEnd,
@@ -801,7 +862,6 @@ pub fn setup_background_text(
         //transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
         ..default()
     }).insert(Scoreboard {perfect:0, great:0, miss:0});
-
 }
 
 pub fn update_background_text(
@@ -821,6 +881,87 @@ pub fn update_scoreboard(
         score_text.sections[1].value = scoreboard.perfect.to_string();
         score_text.sections[3].value = scoreboard.great.to_string();
         score_text.sections[5].value = scoreboard.miss.to_string();
+}
+
+pub fn setup_combo(
+    mut commands: Commands,
+    font_resource: Res<FontResource>
+) {
+    commands.spawn_bundle(TextBundle {
+        style: Style {
+            position_type: PositionType::Absolute,
+            align_self: AlignSelf::Center,
+            position: bevy::math::Rect::<bevy::ui::Val> { left: Val::Px(500.), ..Default::default() },
+            ..default()
+        },
+        text: Text { 
+            sections: vec![
+                TextSection {
+                    value: "0".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 50.0,
+                        color: Color::rgba(0.98, 0.92, 0.98, 0.5),
+                        ..default()
+                    },
+                }
+            ],
+            alignment: TextAlignment { vertical: VerticalAlign::Center, horizontal: HorizontalAlign::Center },
+        },
+        ..default()
+    })
+    .insert(ComboText);
+    commands.spawn().insert(Combo(0));
+}
+
+//차후에 ComboResource로 그림수정
+/*
+pub fn spawn_combo_effect(
+    mut commands: Commands,
+    mut event_combo: EventReader<EventCombo>,
+    query: Query<(&Combo)>
+) {
+
+}
+*/
+
+pub fn update_combo_effect(
+    mut commands: Commands,
+    mut set: ParamSet<(
+        Query<&mut Combo>,
+        Query<(&mut Text, &mut Style, With<ComboText>)>
+    )>,
+    mut event_combo: EventReader<EventCombo>
+) {
+    let combo_text;
+    {
+        let mut combo_query = set.p0();
+        let mut combo = combo_query.single_mut();
+        for event in event_combo.iter() {
+            match event.judge {
+                JudgeAccuracy::Miss => {combo.0 = 0},
+                _ => {combo.0 += 1},
+            }
+        }
+        combo_text = combo.0;
+    }
+    let mut text_query = set.p1();
+    let (mut text, mut text_style, _dummy) = text_query.single_mut();
+    text.sections[0].value = combo_text.to_string();
+    /*
+    if combo_text <= 9 { 
+        text_style.position.left = Val::Px(482.5);
+    } else if combo_text <= 99 {
+        text_style.position.left = Val::Px(462.75);
+    } else if combo_text <= 999 {
+        text_style.position.left = Val::Px(443.);
+    } else if combo_text <= 9999 {
+        text_style.position.left = Val::Px(423.75);
+    } else {
+        text_style.position.left = Val::Px(404.5);
+    }
+    */
+
 }
 
 

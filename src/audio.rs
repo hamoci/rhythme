@@ -105,22 +105,22 @@ pub fn event_key_sound(
     mut event3: EventReader<notes::KeySound3>,
     mut event4: EventReader<notes::KeySound4>,
 ) {
-    for sound in event1.iter() {
+    for _sound in event1.iter() {
         key_channel1.play(audio_source.hit_sound1.clone());
         key_channel1.set_volume(audio_state1.volume);
     }
 
-    for sound in event2.iter() {
+    for _sound in event2.iter() {
         key_channel2.play(audio_source.hit_sound2.clone());
         key_channel2.set_volume(audio_state2.volume);
     }
 
-    for sound in event3.iter() {
+    for _sound in event3.iter() {
         key_channel3.play(audio_source.hit_sound3.clone());
         key_channel3.set_volume(audio_state3.volume);
     }
 
-    for sound in event4.iter() {
+    for _sound in event4.iter() {
         key_channel4.play(audio_source.hit_sound4.clone());
         key_channel4.set_volume(audio_state4.volume);
     }
