@@ -1,7 +1,7 @@
-use bevy::{input::system::exit_on_esc_system, prelude::*};
-use bevy_inspector_egui::WorldInspectorPlugin;
-use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::prelude::*;
+//use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_kira_audio::AudioPlugin;
+//use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 
 mod notes;
 mod audio;
@@ -19,7 +19,7 @@ fn main() {
     //app.add_plugins(bevy_webgl2::DefaultPlugins);
     app.add_plugins(DefaultPlugins);
     app.add_plugin(AudioPlugin);
-    app.add_plugin(WorldInspectorPlugin::new());
+    //app.add_plugin(WorldInspectorPlugin::new());
     app.add_plugin(bevy_framepace::FramepacePlugin::default());
     app.add_startup_system(camera_setup);
     app.add_startup_system(frame_limit);
@@ -32,14 +32,15 @@ fn main() {
 }
 
 fn camera_setup(mut commands: Commands) {
+    /*
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    
     //Needs for see UI
     commands.spawn_bundle(UiCameraBundle::default());
+    */
+    commands.spawn_bundle(Camera2dBundle::default());
 }
-
 fn frame_limit(
     mut setting: ResMut<bevy_framepace::FramepacePlugin>
 ) {
-    setting.framerate_limit = bevy_framepace::FramerateLimit::Manual(60);
+    setting.framerate_limit = bevy_framepace::FramerateLimitParam::Manual(60);
 }

@@ -206,6 +206,9 @@ pub struct Combo(u32);
 #[derive(Component)]
 pub struct ComboText;
 
+#[derive(Component)]
+pub struct AccuracyText;
+
 pub struct EventCombo {
     judge: JudgeAccuracy,
 }
@@ -763,6 +766,7 @@ pub fn setup_background_text(
 ) {
     commands.spawn_bundle(TextBundle {
         style: Style {
+            position_type: PositionType::Absolute,
             align_self: AlignSelf::FlexEnd,
             ..default()
         },
@@ -799,7 +803,7 @@ pub fn setup_background_text(
         style: Style {
             position_type: PositionType::Absolute,
             align_self: AlignSelf::FlexEnd,
-            position: bevy::math::Rect::<bevy::ui::Val> { top: Val::Px(30.), ..Default::default() },
+            position: UiRect::<bevy::ui::Val> { top: Val::Px(30.), ..Default::default() },
             ..default()
         },
         text: Text { 
@@ -887,11 +891,15 @@ pub fn setup_combo(
     mut commands: Commands,
     font_resource: Res<FontResource>
 ) {
+    /*
     commands.spawn_bundle(TextBundle {
         style: Style {
-            position_type: PositionType::Absolute,
-            align_self: AlignSelf::Center,
-            position: bevy::math::Rect::<bevy::ui::Val> { left: Val::Px(500.), ..Default::default() },
+            size: Size::new(Val::Px(200.), Val::Px(80.)),
+            //position_type: PositionType::Absolute,
+            margin: Rect::all(Val::Auto),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            //position: bevy::math::Rect::<bevy::ui::Val> { left: Val::Px(500.), ..Default::default() },
             ..default()
         },
         text: Text { 
@@ -912,6 +920,58 @@ pub fn setup_combo(
     })
     .insert(ComboText);
     commands.spawn().insert(Combo(0));
+    */
+    commands.spawn_bundle(ButtonBundle {
+        style: Style {
+            size: Size::new(Val::Px(250.), Val::Px(80.)),
+            margin: UiRect::all(Val::Auto),
+            //position: UiRect::new(Val::Px(385.), Val::Undefined, Val::Undefined, Val::Undefined),
+            //position_type: PositionType::Absolute,
+            justify_content: JustifyContent::Center,
+            //align_self: AlignSelf::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        color: UiColor(Color::rgba(0., 0., 0., 0.)),
+        ..default()
+    })
+    .with_children(|parent| {
+        parent.spawn_bundle(TextBundle::from_section(
+            "0",
+            TextStyle {
+                font: font_resource.font.clone(),
+                font_size: 50.0,
+                color: Color::rgba(0.98, 0.92, 0.98, 0.5)
+            }));
+        })
+    .insert(ComboText);
+    commands.spawn().insert(Combo(0));
+
+    /*
+    commands.spawn_bundle(ButtonBundle {
+        style: Style {
+            size: Size::new(Val::Px(250.), Val::Px(80.)),
+            margin: UiRect::all(Val::Auto),
+            position_type: PositionType::Absolute,
+            position: UiRect::new(Val::Px(400.), Val::Undefined, Val::Px(20.), Val::Undefined),
+            justify_content: JustifyContent::Center,
+            align_self: AlignSelf::Center,
+            ..default()
+        },
+        color: UiColor(Color::rgba(0., 0., 0., 0.)),
+        ..default()
+    })
+    .with_children(|parent| {
+        parent.spawn_bundle(TextBundle::from_section(
+            "00.00",
+            TextStyle {
+                font: font_resource.font.clone(),
+                font_size: 20.0,
+                color: Color::rgba(0.98, 0.92, 0.98, 0.5)
+            }));
+        })
+    .insert(AccuracyText);
+    */
 }
 
 //차후에 ComboResource로 그림수정
@@ -927,26 +987,26 @@ pub fn spawn_combo_effect(
 
 pub fn update_combo_effect(
     mut commands: Commands,
-    mut set: ParamSet<(
-        Query<&mut Combo>,
+    /*mut set: ParamSet<(
+        Query<(&mut Combo, &Children)>,
         Query<(&mut Text, &mut Style, With<ComboText>)>
-    )>,
+    )>,*/
+    mut combo_query: Query<(&mut Combo)>,
+    mut button_query: Query<(&ComboText, &Children)>,
+    mut text_query: Query<(&mut Text, &mut Style)>,
     mut event_combo: EventReader<EventCombo>
 ) {
-    let combo_text;
-    {
-        let mut combo_query = set.p0();
-        let mut combo = combo_query.single_mut();
-        for event in event_combo.iter() {
-            match event.judge {
-                JudgeAccuracy::Miss => {combo.0 = 0},
-                _ => {combo.0 += 1},
-            }
+    let mut combo = combo_query.single_mut();
+    for event in event_combo.iter() {
+        match event.judge {
+            JudgeAccuracy::Miss => {combo.0 = 0},
+            _ => {combo.0 += 1},
         }
-        combo_text = combo.0;
     }
-    let mut text_query = set.p1();
-    let (mut text, mut text_style, _dummy) = text_query.single_mut();
+    let combo_text = combo.0;
+    let (_dummy, children) = button_query.single_mut();
+
+    let (mut text, mut text_style) = text_query.get_mut(children[0]).unwrap();
     text.sections[0].value = combo_text.to_string();
     /*
     if combo_text <= 9 { 
@@ -1015,8 +1075,8 @@ pub fn open_chart(mut commands: Commands) {
 
     loop {
         let read_bytes = buffer.read_line(&mut line).unwrap();
-        println!("Buffer: {}", line.trim());
-        println!("Read Bytes: {}", read_bytes);
+        //println!("Buffer: {}", line.trim());
+        //println!("Read Bytes: {}", read_bytes);
         if read_bytes == 0 {
             break;
         }
@@ -1084,14 +1144,14 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         timing: 0,
         speed: 17.0,
     };
-    println!("parsed string: {}", string.trim());
+    //println!("parsed string: {}", string.trim());
     for c in string.chars() {
         if c == ',' {
             match commas {
                 0 => { 
                     let parsed: usize = (&string[start..end]).parse().unwrap();
                     start = end + 1;
-                    println!("commas 0: {}", parsed);
+                    //println!("commas 0: {}", parsed);
                     match parsed {
                         0 => note.press_key = Press4Key::First,
                         1 => note.press_key = Press4Key::Second,
@@ -1104,7 +1164,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
                 1 => {
                     let parsed: &str = &string[start..end];
                     start = end + 1;
-                    println!("commas 1: {}", parsed);
+                    //println!("commas 1: {}", parsed);
                     match parsed {
                         "Short" => note.note_type = NoteType::Short,
                         "Long" => note.note_type = NoteType::Long,
@@ -1114,7 +1174,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
 
                 2 => {
                     let parsed: usize = (&string[start..end]).parse().unwrap();
-                    println!("commas 2: {}\n", parsed);
+                    //println!("commas 2: {}\n", parsed);
                     note.timing = parsed;
                 }
                 3 => break,

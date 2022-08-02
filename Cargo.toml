@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies.bevy]
-version = "0.7"
+version = "0.8"
 default-features = false
 
 features = [
@@ -19,10 +19,12 @@ features = [
   "vorbis",
   "x11",
   "filesystem_watcher",
+  "bevy_asset",
+  "bevy_scene",
 ]
 
 [dependencies.bevy_kira_audio]
-version = "0.10.0"
+version = "0.11.0"
 default-features = false
 features = [
   "wav",
@@ -31,12 +33,18 @@ features = [
   "ogg",
 ]
 
+[dependencies.web-sys]
+version = "0.3"
+features = []
+
 [dependencies]
-bevy_egui = "0.14"
-bevy-inspector-egui = "0.11.0"
-bevy_framepace = "0.4.0"
+bevy_egui = "0.15"
+#bevy inspector not working at bevy 0.8 yet
+#bevy-inspector-egui = "0.11.0"
+bevy_framepace = "0.5.0"
 tracing-wasm = "0.2"
-bevy-debug-text-overlay = "2.0"
+bevy-debug-text-overlay = "3.0"
+wasm-bindgen = "0.2"
 
 [workspace]
 resolver = "2"
