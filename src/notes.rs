@@ -207,6 +207,9 @@ pub struct Combo(u32);
 pub struct ComboText;
 
 #[derive(Component)]
+pub struct TotalAccuracy(f32);
+
+#[derive(Component)]
 pub struct AccuracyText;
 
 pub struct EventCombo {
@@ -243,10 +246,12 @@ impl Plugin for NotePlugin {
             .add_startup_system(spawn_background)
             .add_startup_system(open_chart)
             .add_system(game_ticking)
+
             .add_system(update_background_text)
             .add_system(update_scoreboard)
 
-
+            .add_startup_system(setup_accuracy)
+            .add_system(update_accuracy)
 
             .add_system(spawn_note_0)
             .add_system(spawn_note_1)
@@ -887,91 +892,62 @@ pub fn update_scoreboard(
         score_text.sections[5].value = scoreboard.miss.to_string();
 }
 
+pub fn setup_accuracy(
+    mut commands: Commands,
+    font_resource: Res<FontResource>
+) {
+    commands.spawn_bundle(Text2dBundle {
+        transform: Transform::from_translation(Vec3::new(0., 0., 4.)),
+        text: Text::from_section(
+            "0.0%",
+            TextStyle {
+                font: font_resource.font.clone(),
+                font_size: 25.,
+                color: Color::rgba(0.98, 0.92, 0.92, 0.5)
+            }
+        ).with_alignment(TextAlignment::CENTER),
+        ..Default::default()
+        }).insert(AccuracyText);
+        commands.spawn().insert(TotalAccuracy(0.));
+}
+
+pub fn update_accuracy(
+    mut commands: Commands,
+    mut text_query: Query<(&mut Text, &AccuracyText)>,
+    mut accuracy_query: Query<&mut TotalAccuracy>,
+    scoreboard_query: Query<&Scoreboard>
+) {
+    let mut accuracy = accuracy_query.single_mut();
+    let scoreboard = scoreboard_query.single();
+    let total_score = 3 * (scoreboard.perfect + scoreboard.great + scoreboard.miss);
+    let total;
+    if total_score != 0 {
+        total = (scoreboard.perfect * 3 + scoreboard.great) as f32 / total_score as f32;
+    } else {return;}
+    accuracy.0 = total * 100.;
+    let total_text = format!("{0:.02}%", accuracy.0);
+    
+    let (mut text, _dummy) = text_query.single_mut();
+    text.sections[0].value = total_text;
+}
+
 pub fn setup_combo(
     mut commands: Commands,
     font_resource: Res<FontResource>
 ) {
-    /*
-    commands.spawn_bundle(TextBundle {
-        style: Style {
-            size: Size::new(Val::Px(200.), Val::Px(80.)),
-            //position_type: PositionType::Absolute,
-            margin: Rect::all(Val::Auto),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            //position: bevy::math::Rect::<bevy::ui::Val> { left: Val::Px(500.), ..Default::default() },
-            ..default()
-        },
-        text: Text { 
-            sections: vec![
-                TextSection {
-                    value: "0".to_string(),
-                    style: TextStyle {
-                        font: font_resource.font.clone(),
-                        font_size: 50.0,
-                        color: Color::rgba(0.98, 0.92, 0.98, 0.5),
-                        ..default()
-                    },
-                }
-            ],
-            alignment: TextAlignment { vertical: VerticalAlign::Center, horizontal: HorizontalAlign::Center },
-        },
-        ..default()
-    })
-    .insert(ComboText);
-    commands.spawn().insert(Combo(0));
-    */
-    commands.spawn_bundle(ButtonBundle {
-        style: Style {
-            size: Size::new(Val::Px(250.), Val::Px(80.)),
-            margin: UiRect::all(Val::Auto),
-            //position: UiRect::new(Val::Px(385.), Val::Undefined, Val::Undefined, Val::Undefined),
-            //position_type: PositionType::Absolute,
-            justify_content: JustifyContent::Center,
-            //align_self: AlignSelf::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        color: UiColor(Color::rgba(0., 0., 0., 0.)),
-        ..default()
-    })
-    .with_children(|parent| {
-        parent.spawn_bundle(TextBundle::from_section(
+    commands.spawn_bundle(Text2dBundle {
+        transform: Transform::from_translation(Vec3::new(0., 50., 4.)),
+        text: Text::from_section(
             "0",
             TextStyle {
                 font: font_resource.font.clone(),
-                font_size: 50.0,
-                color: Color::rgba(0.98, 0.92, 0.98, 0.5)
-            }));
-        })
-    .insert(ComboText);
+                font_size: 50.,
+                color: Color::rgba(0.98, 0.92, 0.92, 0.5)
+            }
+        ).with_alignment(TextAlignment::CENTER),
+        ..Default::default()
+        }).insert(ComboText);
     commands.spawn().insert(Combo(0));
-
-    /*
-    commands.spawn_bundle(ButtonBundle {
-        style: Style {
-            size: Size::new(Val::Px(250.), Val::Px(80.)),
-            margin: UiRect::all(Val::Auto),
-            position_type: PositionType::Absolute,
-            position: UiRect::new(Val::Px(400.), Val::Undefined, Val::Px(20.), Val::Undefined),
-            justify_content: JustifyContent::Center,
-            align_self: AlignSelf::Center,
-            ..default()
-        },
-        color: UiColor(Color::rgba(0., 0., 0., 0.)),
-        ..default()
-    })
-    .with_children(|parent| {
-        parent.spawn_bundle(TextBundle::from_section(
-            "00.00",
-            TextStyle {
-                font: font_resource.font.clone(),
-                font_size: 20.0,
-                color: Color::rgba(0.98, 0.92, 0.98, 0.5)
-            }));
-        })
-    .insert(AccuracyText);
-    */
 }
 
 //차후에 ComboResource로 그림수정
@@ -992,8 +968,7 @@ pub fn update_combo_effect(
         Query<(&mut Text, &mut Style, With<ComboText>)>
     )>,*/
     mut combo_query: Query<(&mut Combo)>,
-    mut button_query: Query<(&ComboText, &Children)>,
-    mut text_query: Query<(&mut Text, &mut Style)>,
+    mut text_query: Query<(&mut Text, &ComboText)>,
     mut event_combo: EventReader<EventCombo>
 ) {
     let mut combo = combo_query.single_mut();
@@ -1004,9 +979,8 @@ pub fn update_combo_effect(
         }
     }
     let combo_text = combo.0;
-    let (_dummy, children) = button_query.single_mut();
 
-    let (mut text, mut text_style) = text_query.get_mut(children[0]).unwrap();
+    let (mut text, _dummy) = text_query.single_mut();
     text.sections[0].value = combo_text.to_string();
     /*
     if combo_text <= 9 { 
