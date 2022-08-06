@@ -1,10 +1,14 @@
 use bevy::prelude::*;
-//use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::WorldInspectorPlugin;
 use bevy_kira_audio::AudioPlugin;
 //use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use crate::state::GameState;
 
 mod notes;
 mod audio;
+mod state;
+mod select_menu;
+
 
 fn main() {
     let mut app = App::new();    
@@ -19,14 +23,16 @@ fn main() {
     //app.add_plugins(bevy_webgl2::DefaultPlugins);
     app.add_plugins(DefaultPlugins);
     app.add_plugin(AudioPlugin);
-    //app.add_plugin(WorldInspectorPlugin::new());
+    app.add_plugin(WorldInspectorPlugin::new());
     app.add_plugin(bevy_framepace::FramepacePlugin::default());
     app.add_startup_system(camera_setup);
     app.add_startup_system(frame_limit);
-   // app.add_system(exit_on_esc_system);
+
+    app.add_state(GameState::SelectMenu);
+    app.add_plugin(select_menu::SelectMenuPlugin);
     app.add_plugin(notes::NotePlugin);
     app.add_plugin(audio::GameAudioPlugin);
-       //app.add_system(notes::print_keyboard_event_system); // for debug
+    //app.add_system(notes::print_keyboard_event_system); // for debug
     //app.add_plugin(FrameTimeDiagnosticsPlugin::default()); // for debug
     app.run();
 }

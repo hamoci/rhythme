@@ -3,14 +3,15 @@ use std::collections::VecDeque;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
+use crate::state::GameState;
 
 const FRAME: f32 = 1.0/60.0;
 const STANDARD_NOTE_SPEED: f32 = 100.;
 const HOLD_TIME: f32 = 3000.;
 const MAX_MUSIC_LENGTH: f32 = 600000.;
-
+const JUDGE_LINE: f32 = -250.;
 pub struct FontResource {
-    font: Handle<Font>,
+    pub font: Handle<Font>,
 }
 
 impl FromWorld for FontResource {
@@ -142,26 +143,6 @@ pub struct Note {
 
 #[derive(Component)]
 pub struct BackLight;
-pub struct SongInfo {
-    name: String,
-    bpm: usize,
-    time_length: f32,
-    difficulty: f32,
-}
-
-#[derive(Component)]
-pub struct PlayingInfo {
-    song_name: String,
-    accuracy: f32,
-    score: usize,
-    current_time: f32,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Clone, StageLabel)]
-pub enum GameStage {
-    Playing,
-    Select,
-}
 
 #[derive(Component)]
 pub struct Chart {
@@ -230,7 +211,8 @@ pub struct NotePlugin;
 
 impl Plugin for NotePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<NoteResource>()
+        app
+            .init_resource::<NoteResource>()
             .init_resource::<FontResource>()
             .init_resource::<JudgeResource>()
             .init_resource::<NumberResource>()
@@ -242,40 +224,46 @@ impl Plugin for NotePlugin {
             .add_event::<KeySound4>()
             .add_event::<EventCombo>()
 
-            .add_startup_system(setup_background_text)
-            .add_startup_system(spawn_background)
-            .add_startup_system(open_chart)
-            .add_system(game_ticking)
+            .add_system_set(
+                SystemSet::on_enter(GameState::InGame)
+                .with_system(setup_background_text)
+                .with_system(spawn_background)
+                .with_system(open_chart)
+                .with_system(setup_accuracy)
+                .with_system(setup_combo)
+            )
+            .add_system_set(
+                SystemSet::on_update(GameState::InGame)
+                .with_system(game_ticking)
+                .with_system(game_ticking)
+                .with_system(update_background_text)
+                .with_system(update_scoreboard)
+                .with_system(update_accuracy)
+    
+                .with_system(spawn_note_0)
+                .with_system(spawn_note_1)
+                .with_system(spawn_note_2)
+                .with_system(spawn_note_3)
+    
+                .with_system(despawn_note_0)
+                .with_system(despawn_note_1)
+                .with_system(despawn_note_2)
+                .with_system(despawn_note_3)
+    
+                .with_system(move_note)
+    
+                .with_system(spawn_keyboard_backlight)
+                .with_system(despawn_keyboard_backlight)
+    
+                .with_system(spawn_judgement)
+                .with_system(update_judgement)
+    
+                .with_system(update_combo_effect)
+    
+                .with_system(pause_game)
+            );
 
-            .add_system(update_background_text)
-            .add_system(update_scoreboard)
-
-            .add_startup_system(setup_accuracy)
-            .add_system(update_accuracy)
-
-            .add_system(spawn_note_0)
-            .add_system(spawn_note_1)
-            .add_system(spawn_note_2)
-            .add_system(spawn_note_3)
-
-            .add_system(despawn_note_0)
-            .add_system(despawn_note_1)
-            .add_system(despawn_note_2)
-            .add_system(despawn_note_3)
-
-            .add_system(move_note)
-
-            .add_system(spawn_keyboard_backlight)
-            .add_system(despawn_keyboard_backlight)
-
-            .add_system(spawn_judgement)
-            .add_system(update_judgement)
-
-            .add_startup_system(setup_combo)
-            .add_system(update_combo_effect)
-
-            .add_system(pause_game);
-           // app.add_system(_show_playing_timer); // for debug
+           
     }
 }
 
@@ -291,12 +279,13 @@ pub fn spawn_background(
 
     commands.spawn_bundle(SpriteBundle {
         texture: materials.judge.clone(),
-        transform: Transform::from_translation(Vec3::new(0., -350., 2.)),
+        transform: Transform::from_translation(Vec3::new(0., JUDGE_LINE, 2.)),
         ..Default::default()
     });
 
     for i in -2..3 {
         commands.spawn_bundle(SpriteBundle {
+            sprite: Sprite { color: Color::rgba(0.98, 0.98, 0.98, 0.05), ..Default::default()},
             texture: materials.line.clone(),
             transform: Transform::from_translation(Vec3::new(i as f32 * 101., 0., 1.)),
             ..Default::default()
@@ -413,7 +402,7 @@ fn spawn_note(
 ) {
     // -350 : Judgement line. (STANDARD_NOTE_SPEED * note.speed) = 1초에 움직이는 거리. 즉 생성할때 chart.notes[0].timing / 1000초만큼 이동해야 판정선에 닿도록 함
     // y가 530보다 큰 것은 생성하지 않음
-    let position_y: f32 = -350. + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs()) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+    let position_y: f32 = JUDGE_LINE + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs()) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
 
     if position_y <= 530.{
         //println!("Note spawned");
@@ -691,13 +680,13 @@ pub struct JudgeTimer(Timer);
 pub struct Scale(f32);
 
 
-//x:0, y:-200
+//x:0, y:-50
 pub fn spawn_judgement(
     mut commands: Commands,
     mut events: EventReader<EventAnimation>,
     materials: Res<JudgeResource>,
 ) {
-    let mut judge_transform = Transform::from_translation(Vec3::new(0., -200., 4.));
+    let mut judge_transform = Transform::from_translation(Vec3::new(0., -50., 4.));
     for accuracy in events.iter() {
         match accuracy {
             EventAnimation {judge : JudgeAccuracy::Perfect} => {
@@ -798,7 +787,6 @@ pub fn setup_background_text(
             ],
             ..default()
         },
-        //transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
         ..default()
     })
     .insert(TimerText);
@@ -925,7 +913,7 @@ pub fn update_accuracy(
         total = (scoreboard.perfect * 3 + scoreboard.great) as f32 / total_score as f32;
     } else {return;}
     accuracy.0 = total * 100.;
-    let total_text = format!("{0:.02}%", accuracy.0);
+    let total_text = format!("{:0.02}%", accuracy.0);
     
     let (mut text, _dummy) = text_query.single_mut();
     text.sections[0].value = total_text;
@@ -936,7 +924,7 @@ pub fn setup_combo(
     font_resource: Res<FontResource>
 ) {
     commands.spawn_bundle(Text2dBundle {
-        transform: Transform::from_translation(Vec3::new(0., 50., 4.)),
+        transform: Transform::from_translation(Vec3::new(0., 250., 4.)),
         text: Text::from_section(
             "0",
             TextStyle {
@@ -963,10 +951,6 @@ pub fn spawn_combo_effect(
 
 pub fn update_combo_effect(
     mut commands: Commands,
-    /*mut set: ParamSet<(
-        Query<(&mut Combo, &Children)>,
-        Query<(&mut Text, &mut Style, With<ComboText>)>
-    )>,*/
     mut combo_query: Query<(&mut Combo)>,
     mut text_query: Query<(&mut Text, &ComboText)>,
     mut event_combo: EventReader<EventCombo>
@@ -982,20 +966,6 @@ pub fn update_combo_effect(
 
     let (mut text, _dummy) = text_query.single_mut();
     text.sections[0].value = combo_text.to_string();
-    /*
-    if combo_text <= 9 { 
-        text_style.position.left = Val::Px(482.5);
-    } else if combo_text <= 99 {
-        text_style.position.left = Val::Px(462.75);
-    } else if combo_text <= 999 {
-        text_style.position.left = Val::Px(443.);
-    } else if combo_text <= 9999 {
-        text_style.position.left = Val::Px(423.75);
-    } else {
-        text_style.position.left = Val::Px(404.5);
-    }
-    */
-
 }
 
 
@@ -1116,7 +1086,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         note_type: NoteType::Short,
         press_key: Press4Key::First,
         timing: 0,
-        speed: 17.0,
+        speed: 17.5, // 6.4?
     };
     //println!("parsed string: {}", string.trim());
     for c in string.chars() {

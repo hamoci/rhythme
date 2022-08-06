@@ -39,8 +39,7 @@ features = []
 
 [dependencies]
 bevy_egui = "0.15"
-#bevy inspector not working at bevy 0.8 yet
-#bevy-inspector-egui = "0.11.0"
+bevy-inspector-egui = "0.12.0"
 bevy_framepace = "0.5.0"
 tracing-wasm = "0.2"
 bevy-debug-text-overlay = "3.0"

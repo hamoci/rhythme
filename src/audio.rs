@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
-use crate::notes;
+use crate::{notes, state::GameState};
 
 
 pub struct GameAudioPlugin;
@@ -9,14 +9,19 @@ impl Plugin for GameAudioPlugin {
     fn build(&self, app: &mut App) {
         app
         
-        .add_startup_system(setup_audio_channel)
-        .add_system(control_main_track)
         .add_audio_channel::<MainTrackChannel>()
         .add_audio_channel::<KeySoundChannel1>()
         .add_audio_channel::<KeySoundChannel2>()
         .add_audio_channel::<KeySoundChannel3>()
         .add_audio_channel::<KeySoundChannel4>()
-        .add_system(event_key_sound);
+        .add_system_set(
+            SystemSet::on_enter(GameState::InGame)
+            .with_system(setup_audio_channel))
+        .add_system_set(
+            SystemSet::on_update(GameState::InGame)
+            .with_system(control_main_track)
+            .with_system(event_key_sound)
+        );
     }
 }
 
@@ -67,7 +72,7 @@ pub fn setup_audio_channel(
     mut commands: Commands,
     asset_server: ResMut<AssetServer>,
 ) {
-    let sound_track = asset_server.load("music/test.mp3");
+    let sound_track = asset_server.load("music/PUPA/PUPA.mp3");
     let hit1 = asset_server.load("music/hit_sound/key1.ogg");
     let hit2 = asset_server.load("music/hit_sound/key2.ogg");
     let hit3 = asset_server.load("music/hit_sound/key3.ogg");
