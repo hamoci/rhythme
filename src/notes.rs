@@ -235,7 +235,6 @@ impl Plugin for NotePlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::InGame)
                 .with_system(game_ticking)
-                .with_system(game_ticking)
                 .with_system(update_background_text)
                 .with_system(update_scoreboard)
                 .with_system(update_accuracy)
@@ -1006,7 +1005,7 @@ pub fn pause_game(
 }
 
 pub fn open_chart(mut commands: Commands) {
-    let chart_file = File::open("assets/music/test.txt").expect("file not found");
+    let chart_file = File::open("assets/music/PUPA/PUPA.txt").expect("file not found");
 
     //Note를 Spawn하거나 Despawn할 때 한번에 4개를 동시에 처리할 수 있도록 저장하는 Stack을 나눔
     let mut chart_vec_0: VecDeque<Note> = VecDeque::new();

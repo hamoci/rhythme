@@ -29,6 +29,7 @@ fn main() {
     app.add_startup_system(frame_limit);
 
     app.add_state(GameState::SelectMenu);
+    //app.add_state(GameState::SelectMenu);
     app.add_plugin(select_menu::SelectMenuPlugin);
     app.add_plugin(notes::NotePlugin);
     app.add_plugin(audio::GameAudioPlugin);
