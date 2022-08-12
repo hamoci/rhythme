@@ -127,7 +127,7 @@ pub enum Press4Key{
     Fourth = 3,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum NoteType{
     Long = 0,
     Short = 1,
@@ -138,6 +138,7 @@ pub struct Note {
     note_type: NoteType,
     press_key: Press4Key,
     timing: usize,
+    release_timing: usize,
     speed: f32,
 }
 
@@ -407,17 +408,34 @@ fn spawn_note(
         //println!("Note spawned");
         //println!("{}", position_y);
         let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
-        commands.spawn_bundle(SpriteBundle {
-            texture: material,
-            transform: position,
-            ..Default::default()
-        }).insert(Note {
-            note_type: chart.notes[0].note_type.clone(),
-            press_key: chart.notes[0].press_key.clone(),
-            timing: chart.notes[0].timing,
-            speed: chart.notes[0].speed,
-        });
+        if chart.notes[0].note_type == NoteType::Long {
+            let release_position: f32 = position_y + ((chart.notes[0].release_timing - chart.notes[0].timing) as f32 / 1000.) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+            commands.spawn_bundle(SpriteBundle {
+                texture: material,
+                transform: position,
+                ..Default::default()
+            }).insert(Note {
+                note_type: chart.notes[0].note_type.clone(),
+                press_key: chart.notes[0].press_key.clone(),
+                release_timing: chart.notes[0].release_timing,
+                timing: chart.notes[0].timing,
+                speed:chart.notes[0].speed,
+            });
+        } else if chart.notes[0].note_type == NoteType::Short {
+            commands.spawn_bundle(SpriteBundle {
+                texture: material,
+                transform: position,
+                ..Default::default()
+            }).insert(Note {
+                note_type: chart.notes[0].note_type.clone(),
+                press_key: chart.notes[0].press_key.clone(),
+                release_timing: chart.notes[0].release_timing,
+                timing: chart.notes[0].timing,
+                speed: chart.notes[0].speed,
+            });
+        }
         chart.notes.pop_front();
+        
     }
 }
 
@@ -906,10 +924,10 @@ pub fn update_accuracy(
 ) {
     let mut accuracy = accuracy_query.single_mut();
     let scoreboard = scoreboard_query.single();
-    let total_score = 3 * (scoreboard.perfect + scoreboard.great + scoreboard.miss);
+    let total_score = 100 * (scoreboard.perfect + scoreboard.great + scoreboard.miss);
     let total;
     if total_score != 0 {
-        total = (scoreboard.perfect * 3 + scoreboard.great) as f32 / total_score as f32;
+        total = (scoreboard.perfect * 100 + scoreboard.great * 90) as f32 / total_score as f32;
     } else {return;}
     accuracy.0 = total * 100.;
     let total_text = format!("{:0.02}%", accuracy.0);
@@ -1085,6 +1103,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         note_type: NoteType::Short,
         press_key: Press4Key::First,
         timing: 0,
+        release_timing: 0,
         speed: 17.5, // 6.4?
     };
     //println!("parsed string: {}", string.trim());
@@ -1117,10 +1136,20 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
 
                 2 => {
                     let parsed: usize = (&string[start..end]).parse().unwrap();
+                    start = end + 1;
                     //println!("commas 2: {}\n", parsed);
                     note.timing = parsed;
                 }
-                3 => break,
+                3 => {
+                    if note.note_type == NoteType::Short {
+                      break;
+                    }
+                    let parsed: usize = (&string[start..end]).parse().unwrap();
+                    note.release_timing = parsed;
+                }
+                4 => {
+                    break;
+                }
                 _ => panic!("parsing comma error : {}", commas),
             }
             commas = commas + 1;
@@ -1128,7 +1157,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         end = end + 1;
     }
 
-    if commas == 3 {
+    if commas == 3 || commas == 4 {
         Ok(note)
     } else {
         Err("Not parsed")
