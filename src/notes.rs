@@ -10,6 +10,11 @@ const STANDARD_NOTE_SPEED: f32 = 100.;
 const HOLD_TIME: f32 = 3000.;
 const MAX_MUSIC_LENGTH: f32 = 600000.;
 const JUDGE_LINE: f32 = -250.;
+const FIRST_KEY: KeyCode = KeyCode::Z;
+const SECOND_KEY: KeyCode = KeyCode::X;
+const THIRD_KEY: KeyCode = KeyCode::Period;
+const FOURTH_KEY: KeyCode = KeyCode::Slash;
+
 pub struct FontResource {
     pub font: Handle<Font>,
 }
@@ -139,6 +144,8 @@ pub struct Note {
     press_key: Press4Key,
     timing: usize,
     release_timing: usize,
+    pushed: bool,
+    missed: bool,
     speed: f32,
 }
 
@@ -407,9 +414,13 @@ fn spawn_note(
     if position_y <= 530.{
         //println!("Note spawned");
         //println!("{}", position_y);
-        let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
+
         if chart.notes[0].note_type == NoteType::Long {
             let release_position: f32 = position_y + ((chart.notes[0].release_timing - chart.notes[0].timing) as f32 / 1000.) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+            let mut position = Transform::from_translation(Vec3::new(position_x, position_y + (release_position - position_y) / 2., 3.));
+            let scale = 1. + (1. / 30. * (release_position - position_y));
+            let scale = Scale(scale);
+            position.scale = Vec3::new(1., scale.0, 1.);
             commands.spawn_bundle(SpriteBundle {
                 texture: material,
                 transform: position,
@@ -420,8 +431,11 @@ fn spawn_note(
                 release_timing: chart.notes[0].release_timing,
                 timing: chart.notes[0].timing,
                 speed:chart.notes[0].speed,
+                pushed: false,
+                missed: false,
             });
         } else if chart.notes[0].note_type == NoteType::Short {
+            let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
             commands.spawn_bundle(SpriteBundle {
                 texture: material,
                 transform: position,
@@ -432,6 +446,8 @@ fn spawn_note(
                 release_timing: chart.notes[0].release_timing,
                 timing: chart.notes[0].timing,
                 speed: chart.notes[0].speed,
+                pushed: false,
+                missed: false,
             });
         }
         chart.notes.pop_front();
@@ -457,34 +473,77 @@ fn despawn_note(
     commands: &mut Commands,
     input_key: Input<KeyCode>,
     key_code: KeyCode,
-    note: &Note,
+    mut note: &mut Note,
+    time: f32,
     music_timer: &MusicTimer,
     mut score: &mut Scoreboard,
-    entity: Entity
+    entity: Entity,
+    mut transform: &mut Transform
 ) -> (bool, JudgeAccuracy) {
     //Judgement : Perfect 0.04167sec (DJMAX V Respect)
     //            Great   0.09000sec
-    if input_key.just_pressed(key_code) && (!music_timer.timer.paused()) {
-        //println!("current timer: {}", music_timer.timer.elapsed_secs());
-        if (note.timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
-            //println!("note timing : {}", note.timing as f32 / 1000.);
-            commands.entity(entity).despawn();
-            score.perfect += 1;
-            //println!("perfect {}", note.timing as f32 / 1000.);
-            return (true, JudgeAccuracy::Perfect);
-        } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
-            //println!("note timing : {}", note.timing as f32 / 1000.);
-            commands.entity(entity).despawn();
-            score.great += 1;
-            //println!("great {}", note.timing as f32 / 1000.);
-            return (true, JudgeAccuracy::Great);
+    if !music_timer.timer.paused() {
+        if input_key.just_pressed(key_code) {
+            //println!("current timer: {}", music_timer.timer.elapsed_secs());
+            if note.note_type == NoteType::Short {
+                if (note.timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
+                    //println!("note timing : {}", note.timing as f32 / 1000.);
+                    commands.entity(entity).despawn();
+                    score.perfect += 1;
+                    //println!("perfect {}", note.timing as f32 / 1000.);
+                    return (true, JudgeAccuracy::Perfect);
+                } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
+                    //println!("note timing : {}", note.timing as f32 / 1000.);
+                    commands.entity(entity).despawn();
+                    score.great += 1;
+                    //println!("great {}", note.timing as f32 / 1000.);
+                    return (true, JudgeAccuracy::Great);
+                }
+            // TODO: Solve Error Here
+            } else if (note.note_type == NoteType::Long) && (note.pushed == false) {
+                if (note.timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
+                    score.perfect += 1;
+                    note.pushed = true;
+                    return (true, JudgeAccuracy::Perfect);
+                } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
+                    score.great += 1;
+                    note.pushed = true;
+                    return (true, JudgeAccuracy::Great);
+                }
+            }
+        }
+        
+        if note.note_type == NoteType::Short {
+            if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
+                commands.entity(entity).despawn();
+                score.miss += 1;
+                println!("miss {}", music_timer.timer.elapsed_secs());
+                return (true, JudgeAccuracy::Miss);
+            }
+        //TODO: Solve Error Here
+        } else if note.note_type == NoteType::Long {
+            if note.pushed == true && input_key.pressed(key_code) {
+                let position = time * (STANDARD_NOTE_SPEED * note.speed);
+                transform.translation.y += position / 2.;
+                transform.scale.y -= transform.scale.y - position / ((note.release_timing - note.timing) as f32 * note.speed * STANDARD_NOTE_SPEED);
+            } else if note.pushed == false && input_key.pressed(key_code) {
+                note.pushed = true;
+                return (true, JudgeAccuracy::Bad);
+            }
+        //TODO: Solve Error Here
+            if note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() && (note.pushed == false) {
+                score.miss += 1;
+                note.missed = true;
+                println!("miss {}", music_timer.timer.elapsed_secs());
+                return (true, JudgeAccuracy::Miss);
+            }
+
         }
     }
-    
-    if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
-        commands.entity(entity).despawn();
+    if note.release_timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() {
         score.miss += 1;
         println!("miss {}", music_timer.timer.elapsed_secs());
+        commands.entity(entity).despawn();
         return (true, JudgeAccuracy::Miss);
     }
     (false, JudgeAccuracy::Miss)
@@ -493,8 +552,9 @@ fn despawn_note(
 //'Z'
 pub fn despawn_note_0(
     mut commands: Commands,
-    query_note: Query<(Entity, &Note)>,
+    mut query_note: Query<(Entity, &mut Note, &mut Transform)>,
     key_input: Res<Input<KeyCode>>,
+    time: Res<Time>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
@@ -503,13 +563,13 @@ pub fn despawn_note_0(
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
-    for (entity, note) in query_note.iter() {
+    for (entity, mut note, mut transform) in query_note.iter_mut() {
         match note.press_key {
             Press4Key::First => (),
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, note, music_timer, &mut scoreboard, entity);
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -524,8 +584,9 @@ pub fn despawn_note_0(
 //'X'
 pub fn despawn_note_1(
     mut commands: Commands,
-    query_note: Query<(Entity, &Note)>,
+    mut query_note: Query<(Entity, &mut Note, &mut Transform)>,
     key_input: Res<Input<KeyCode>>,
+    time: Res<Time>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
@@ -534,13 +595,13 @@ pub fn despawn_note_1(
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
-    for (entity, note) in query_note.iter() {
+    for (entity, mut note, mut transform) in query_note.iter_mut() {
         match note.press_key {
             Press4Key::Second => (),
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, note, music_timer, &mut scoreboard, entity);
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, &mut note, time.delta_seconds() ,music_timer, &mut scoreboard, entity, &mut transform);
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -555,8 +616,9 @@ pub fn despawn_note_1(
 //'.'
 pub fn despawn_note_2(
     mut commands: Commands,
-    query_note: Query<(Entity, &Note)>,
+    mut query_note: Query<(Entity, &mut Note, &mut Transform)>,
     key_input: Res<Input<KeyCode>>,
+    time: Res<Time>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
@@ -565,13 +627,13 @@ pub fn despawn_note_2(
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
-    for (entity, note) in query_note.iter() {
+    for (entity, mut note, mut transform) in query_note.iter_mut() {
         match note.press_key {
             Press4Key::Third => (),
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, note, music_timer, &mut scoreboard, entity);
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -586,8 +648,9 @@ pub fn despawn_note_2(
 //'/'
 pub fn despawn_note_3(
     mut commands: Commands,
-    query_note: Query<(Entity, &Note)>,
+    mut query_note: Query<(Entity, &mut Note, &mut Transform)>,
     key_input: Res<Input<KeyCode>>,
+    time: Res<Time>,
     timer: Query<(Entity, &MusicTimer, Without<Hold>)>,
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
@@ -596,13 +659,13 @@ pub fn despawn_note_3(
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
-    for (entity, note) in query_note.iter() {
+    for (entity, mut note, mut transform) in query_note.iter_mut() {
         match note.press_key {
             Press4Key::Fourth => (),
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, note, music_timer, &mut scoreboard, entity);
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -685,9 +748,9 @@ pub fn _print_keyboard_event_system(mut keyboard_input_events: EventReader<bevy:
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum JudgeAccuracy {
-    Perfect = 300,
-    Great = 100,
-    Good = 50,
+    Perfect = 100,
+    Great = 90,
+    Bad = 10,
     Miss = 0,
 }
 
@@ -1104,7 +1167,9 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         press_key: Press4Key::First,
         timing: 0,
         release_timing: 0,
-        speed: 17.5, // 6.4?
+        speed: 5., // 6.4? = 17.4?
+        pushed: false,
+        missed: false,
     };
     //println!("parsed string: {}", string.trim());
     for c in string.chars() {
@@ -1139,6 +1204,7 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
                     start = end + 1;
                     //println!("commas 2: {}\n", parsed);
                     note.timing = parsed;
+                    note.release_timing = parsed;
                 }
                 3 => {
                     if note.note_type == NoteType::Short {

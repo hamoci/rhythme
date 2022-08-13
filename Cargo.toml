@@ -56,5 +56,11 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+
 #[target.wasm32-unknown-unknown]
 #runner = "wasm-server-runner"

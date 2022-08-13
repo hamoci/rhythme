@@ -12,13 +12,13 @@ mod select_menu;
 
 fn main() {
     let mut app = App::new();    
-        app.insert_resource(Msaa { samples: 4});
-        app.insert_resource(WindowDescriptor {
-            title: "rhythme 0.1.0".to_string(),
-            width: 1000.0,
-            height: 1000.0,
-            ..Default::default()
-        });
+    app.insert_resource(Msaa { samples: 4});
+    app.insert_resource(WindowDescriptor {
+        title: "rhythme 0.1.0".to_string(),
+        width: 1000.0,
+        height: 1000.0,
+        ..Default::default()
+    });
    //#[cfg(target_arch = "wasm32")]
     //app.add_plugins(bevy_webgl2::DefaultPlugins);
     app.add_plugins(DefaultPlugins);
