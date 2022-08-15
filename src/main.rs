@@ -19,14 +19,12 @@ fn main() {
         height: 1000.0,
         ..Default::default()
     });
-   //#[cfg(target_arch = "wasm32")]
-    //app.add_plugins(bevy_webgl2::DefaultPlugins);
     app.add_plugins(DefaultPlugins);
     app.add_plugin(AudioPlugin);
     app.add_plugin(WorldInspectorPlugin::new());
-    app.add_plugin(bevy_framepace::FramepacePlugin::default());
+    //app.add_plugin(bevy_framepace::FramepacePlugin::default());
     app.add_startup_system(camera_setup);
-    app.add_startup_system(frame_limit);
+    //app.add_startup_system(frame_limit);
 
     app.add_state(GameState::SelectMenu);
     //app.add_state(GameState::SelectMenu);

@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::fs::File;
+use core::time;
 use crate::state::GameState;
 
-const FRAME: f32 = 1.0/60.0;
 const STANDARD_NOTE_SPEED: f32 = 100.;
 const HOLD_TIME: f32 = 3000.;
 const MAX_MUSIC_LENGTH: f32 = 600000.;
@@ -70,7 +70,8 @@ impl FromWorld for NoteResource {
 pub struct JudgeResource {
     perfect: Handle<Image>,
     great: Handle<Image>,
-    miss: Handle<Image>
+    miss: Handle<Image>,
+    bad: Handle<Image>,
 }
 
 impl FromWorld for JudgeResource {
@@ -83,12 +84,14 @@ impl FromWorld for JudgeResource {
             perfect: asset_server.load("image/perfect.png"),
             great: asset_server.load("image/great.png"),
             miss: asset_server.load("image/miss.png"),
+            bad: asset_server.load("image/bad.png"),
         };
 
         judge_resource        
     }
 }
 
+/*
 pub struct NumberResource {
     zero: Handle<Image>,
     one: Handle<Image>,
@@ -124,6 +127,7 @@ impl FromWorld for NumberResource {
     }
 }
 
+*/
 #[derive(Eq, PartialEq, Component, Clone)]
 pub enum Press4Key{
     First = 0,
@@ -147,6 +151,7 @@ pub struct Note {
     pushed: bool,
     missed: bool,
     speed: f32,
+    judge: JudgeAccuracy,
 }
 
 #[derive(Component)]
@@ -177,6 +182,20 @@ pub struct Scoreboard {
     perfect: usize,
     great: usize,
     miss: usize,
+    bad: usize,
+}
+
+#[derive(Component)]
+pub struct LongNoteTimer {
+    timer: Timer,
+}
+#[derive(Component)]
+pub enum Lane {
+    First,
+    Second,
+    Third,
+    Fourth,
+    None,
 }
 
 #[derive(Component)]
@@ -223,7 +242,7 @@ impl Plugin for NotePlugin {
             .init_resource::<NoteResource>()
             .init_resource::<FontResource>()
             .init_resource::<JudgeResource>()
-            .init_resource::<NumberResource>()
+            //.init_resource::<NumberResource>()
 
             .add_event::<EventAnimation>()
             .add_event::<KeySound1>()
@@ -239,6 +258,7 @@ impl Plugin for NotePlugin {
                 .with_system(open_chart)
                 .with_system(setup_accuracy)
                 .with_system(setup_combo)
+                .with_system(spawn_long_note_timer)
             )
             .add_system_set(
                 SystemSet::on_update(GameState::InGame)
@@ -267,11 +287,23 @@ impl Plugin for NotePlugin {
     
                 .with_system(update_combo_effect)
     
+                .with_system(long_note_combo_system)
                 .with_system(pause_game)
+                /* Debug Only */
+                .with_system(print_keyboard_event_system)
             );
 
            
     }
+}
+
+pub fn spawn_long_note_timer(
+    mut commands: Commands,
+) {
+    commands.spawn().insert(LongNoteTimer{timer: Timer::from_seconds(0.25, true)}).insert(FirstLane);
+    commands.spawn().insert(LongNoteTimer{timer: Timer::from_seconds(0.25, true)}).insert(SecondLane);
+    commands.spawn().insert(LongNoteTimer{timer: Timer::from_seconds(0.25, true)}).insert(ThirdLane);
+    commands.spawn().insert(LongNoteTimer{timer: Timer::from_seconds(0.25, true)}).insert(FourthLane);
 }
 
 pub fn spawn_background(
@@ -433,6 +465,7 @@ fn spawn_note(
                 speed:chart.notes[0].speed,
                 pushed: false,
                 missed: false,
+                judge: JudgeAccuracy::None,
             });
         } else if chart.notes[0].note_type == NoteType::Short {
             let position = Transform::from_translation(Vec3::new(position_x, position_y, 3.));
@@ -448,6 +481,7 @@ fn spawn_note(
                 speed: chart.notes[0].speed,
                 pushed: false,
                 missed: false,
+                judge: JudgeAccuracy::None,
             });
         }
         chart.notes.pop_front();
@@ -474,14 +508,16 @@ fn despawn_note(
     input_key: Input<KeyCode>,
     key_code: KeyCode,
     mut note: &mut Note,
-    time: f32,
+    time: &Res<Time>,
     music_timer: &MusicTimer,
     mut score: &mut Scoreboard,
     entity: Entity,
-    mut transform: &mut Transform
+    mut transform: &mut Transform,
+    mut lane_query: &mut LongNoteTimer,     //타이머 4개를 Lane별로 사용하여 만드는게나을듯?
 ) -> (bool, JudgeAccuracy) {
     //Judgement : Perfect 0.04167sec (DJMAX V Respect)
     //            Great   0.09000sec
+   
     if !music_timer.timer.paused() {
         if input_key.just_pressed(key_code) {
             //println!("current timer: {}", music_timer.timer.elapsed_secs());
@@ -491,28 +527,33 @@ fn despawn_note(
                     commands.entity(entity).despawn();
                     score.perfect += 1;
                     //println!("perfect {}", note.timing as f32 / 1000.);
+                    note.judge = JudgeAccuracy::Perfect;
                     return (true, JudgeAccuracy::Perfect);
                 } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
                     //println!("note timing : {}", note.timing as f32 / 1000.);
                     commands.entity(entity).despawn();
                     score.great += 1;
                     //println!("great {}", note.timing as f32 / 1000.);
+                    note.judge = JudgeAccuracy::Great;
                     return (true, JudgeAccuracy::Great);
                 }
-            // TODO: Solve Error Here
             } else if (note.note_type == NoteType::Long) && (note.pushed == false) {
                 if (note.timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
                     score.perfect += 1;
+                    lane_query.timer.set_elapsed(time::Duration::from_secs_f32(0.));
                     note.pushed = true;
+                    note.judge = JudgeAccuracy::Perfect;
                     return (true, JudgeAccuracy::Perfect);
                 } else if (note.timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
                     score.great += 1;
+                    lane_query.timer.set_elapsed(time::Duration::from_secs_f32(0.));
                     note.pushed = true;
+                    note.judge = JudgeAccuracy::Great;
                     return (true, JudgeAccuracy::Great);
                 }
             }
         }
-        
+        /*
         if note.note_type == NoteType::Short {
             if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
                 commands.entity(entity).despawn();
@@ -520,33 +561,87 @@ fn despawn_note(
                 println!("miss {}", music_timer.timer.elapsed_secs());
                 return (true, JudgeAccuracy::Miss);
             }
-        //TODO: Solve Error Here
-        } else if note.note_type == NoteType::Long {
-            if note.pushed == true && input_key.pressed(key_code) {
-                let position = time * (STANDARD_NOTE_SPEED * note.speed);
-                transform.translation.y += position / 2.;
-                transform.scale.y -= transform.scale.y - position / ((note.release_timing - note.timing) as f32 * note.speed * STANDARD_NOTE_SPEED);
-            } else if note.pushed == false && input_key.pressed(key_code) {
-                note.pushed = true;
-                return (true, JudgeAccuracy::Bad);
-            }
-        //TODO: Solve Error Here
-            if note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() && (note.pushed == false) {
+        */
+        //아예 안누르면 Short이든, Long이든 삭제. Short의 경우 release_timing과 timing이 동일
+
+        if input_key.just_released(key_code) && note.note_type == NoteType::Long {
+            if (note.release_timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
+                score.perfect += 1;
+                commands.entity(entity).despawn();
+                return (true, JudgeAccuracy::Perfect);
+            } else if (note.release_timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
+                score.great += 1;
+                commands.entity(entity).despawn();
+                return (true, JudgeAccuracy::Great);
+            } else if (note.missed == false) && (note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.09 > music_timer.timer.elapsed_secs()){
+                note.judge = JudgeAccuracy::Bad;
                 score.miss += 1;
                 note.missed = true;
-                println!("miss {}", music_timer.timer.elapsed_secs());
+                return (true, JudgeAccuracy::Miss);
+            }
+        }
+
+        if note.note_type == NoteType::Long {
+            //계속 누르고 있을때의 동작
+            if input_key.pressed(key_code) && (note.timing as f32 / 1000. <= music_timer.timer.elapsed_secs()) && 
+                (note.release_timing as f32 / 1000. >= music_timer.timer.elapsed_secs()) {
+                //println!("timer: {}", lane_query.timer.elapsed_secs());
+                //TODO: 노트가 삭제되는 과정에 대한 개선 필요
+                lane_query.timer.tick(time.delta());
+                /*
+                let position = time.delta_seconds() * (STANDARD_NOTE_SPEED * note.speed);
+                transform.translation.y += position / 2.;
+                transform.scale.y -= transform.scale.y - position / ((note.release_timing - note.timing) as f32 * note.speed * STANDARD_NOTE_SPEED);
+                */
+                if lane_query.timer.just_finished() {
+                    return (true, note.judge);
+                }
+                return (true, JudgeAccuracy::None);
+            }
+            /* 이부분 필요없는듯?
+            //롱노트를 처음으로 누르는순간이 없었고, 그 이후에 계속 누르고 있을때의 동작
+            } else if (note.pushed == false || note.missed == true) && input_key.pressed(key_code) {
+                if lane_query.0.timer.just_finished() {
+                    score.bad += 1;
+                    return (true, JudgeAccuracy::Bad);
+                }
+                return (true, JudgeAccuracy::None);
+            } */
+
+            //롱노트 처음을 안누르는순간 일단 틀린걸로 취급
+            if note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() && (note.missed == false) && (note.pushed == false) {
+                score.miss += 1;
+                note.missed = true;
+                note.judge = JudgeAccuracy::Bad;
+                println!("start miss {}", music_timer.timer.elapsed_secs());
                 return (true, JudgeAccuracy::Miss);
             }
 
         }
     }
+
+
     if note.release_timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() {
         score.miss += 1;
-        println!("miss {}", music_timer.timer.elapsed_secs());
+        println!("end miss or short miss: {}", music_timer.timer.elapsed_secs());
         commands.entity(entity).despawn();
         return (true, JudgeAccuracy::Miss);
     }
+
     (false, JudgeAccuracy::Miss)
+}
+
+pub fn long_note_combo_system(
+    mut timer_query: Query<&mut LongNoteTimer>,
+    time: Res<Time>,
+    mut combo_query: Query<&mut Combo>,
+) {
+    for timer in timer_query.iter_mut() {
+        if timer.timer.just_finished() {
+            let mut combo = combo_query.single_mut();
+            combo.0 += 1;
+        }
+    }
 }
 
 //'Z'
@@ -559,7 +654,8 @@ pub fn despawn_note_0(
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
     mut event_key_sound: EventWriter<KeySound1>,
-    mut event_combo: EventWriter<EventCombo>
+    mut event_combo: EventWriter<EventCombo>,
+    mut lane_query: Query<(&mut LongNoteTimer, With<FirstLane>)>
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -568,8 +664,10 @@ pub fn despawn_note_0(
             Press4Key::First => (),
             _ => continue
         };
+        let (mut lane, _dummy) = lane_query.single_mut();
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Z, &mut note, &time, music_timer, &mut scoreboard, entity, &mut transform, &mut lane);
+        if accuracy == JudgeAccuracy::None { return; }
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -591,7 +689,8 @@ pub fn despawn_note_1(
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
     mut event_key_sound: EventWriter<KeySound2>,
-    mut event_combo: EventWriter<EventCombo>
+    mut event_combo: EventWriter<EventCombo>,
+    mut lane_query: Query<(&mut LongNoteTimer, With<SecondLane>)>,
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -601,7 +700,9 @@ pub fn despawn_note_1(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, &mut note, time.delta_seconds() ,music_timer, &mut scoreboard, entity, &mut transform);
+        let (mut lane, _dummy) = lane_query.single_mut();
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::X, &mut note, &time ,music_timer, &mut scoreboard, entity, &mut transform, &mut lane);
+        if accuracy == JudgeAccuracy::None { return; }
         if nest == true { 
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -623,7 +724,8 @@ pub fn despawn_note_2(
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
     mut event_key_sound: EventWriter<KeySound3>,
-    mut event_combo: EventWriter<EventCombo>
+    mut event_combo: EventWriter<EventCombo>,
+    mut lane_query: Query<(&mut LongNoteTimer, With<ThirdLane>)>,
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -633,7 +735,9 @@ pub fn despawn_note_2(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
+        let (mut lane, _dummy) = lane_query.single_mut();
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Period, &mut note, &time, music_timer, &mut scoreboard, entity, &mut transform, &mut lane);
+        if accuracy == JudgeAccuracy::None { return; }
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -655,7 +759,8 @@ pub fn despawn_note_3(
     mut score: Query<&mut Scoreboard>,
     mut event_animation: EventWriter<EventAnimation>,
     mut event_key_sound: EventWriter<KeySound4>,
-    mut event_combo: EventWriter<EventCombo>
+    mut event_combo: EventWriter<EventCombo>,
+    mut lane_query: Query<(&mut LongNoteTimer, With<FourthLane>)>,
 ) {
     let (_entity, music_timer, _hold) = timer.single();
     let mut scoreboard = score.single_mut();
@@ -665,7 +770,9 @@ pub fn despawn_note_3(
             _ => continue
         };
         //노트 간격이 좁을 때 한번 누르는 것만으로 간격이 좁은 두 노트가 함께 제거되지 않도록 함
-        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, &mut note, time.delta_seconds(), music_timer, &mut scoreboard, entity, &mut transform);
+        let (mut lane, _dummy) = lane_query.single_mut();
+        let (nest, accuracy) = despawn_note(&mut commands, key_input.clone(), KeyCode::Slash, &mut note, &time, music_timer, &mut scoreboard, entity, &mut transform, &mut lane);
+        if accuracy == JudgeAccuracy::None { return; }
         if nest == true {
             event_animation.send(EventAnimation {judge: accuracy});
             event_combo.send( EventCombo{ judge: accuracy });
@@ -752,6 +859,7 @@ pub enum JudgeAccuracy {
     Great = 90,
     Bad = 10,
     Miss = 0,
+    None,
 }
 
 #[derive(Component)]
@@ -787,6 +895,18 @@ pub fn spawn_judgement(
                 judge_transform.scale = Vec3::splat(scale.0);
                 commands.spawn_bundle( SpriteBundle {
                     texture: materials.great.clone(),
+                    transform: judge_transform,
+                    ..Default::default()
+                }).insert(timer).insert(scale);
+                return;
+            },
+
+            EventAnimation {judge : JudgeAccuracy::Bad} => {
+                let timer = JudgeTimer(Timer::from_seconds(1.5, false));
+                let scale = Scale(1.0);
+                judge_transform.scale = Vec3::splat(scale.0);
+                commands.spawn_bundle( SpriteBundle {
+                    texture: materials.bad.clone(),
                     transform: judge_transform,
                     ..Default::default()
                 }).insert(timer).insert(scale);
@@ -918,6 +1038,23 @@ pub fn setup_background_text(
                 },
 
                 TextSection {
+                    value: "\nBad : ".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+                TextSection {
+                    value: "0".to_string(),
+                    style: TextStyle {
+                        font: font_resource.font.clone(),
+                        font_size: 20.0,
+                        color: Color::GOLD,
+                    }
+                },
+
+                TextSection {
                     value: "\nMiss : ".to_string(),
                     style: TextStyle {
                         font: font_resource.font.clone(),
@@ -932,13 +1069,13 @@ pub fn setup_background_text(
                         font_size: 20.0,
                         color: Color::GOLD,
                     }
-                }
+                },
             ],
             ..default()
         },
         //transform: Transform::from_translation(Vec3::new(-350., 450., 10.)),
         ..default()
-    }).insert(Scoreboard {perfect:0, great:0, miss:0});
+    }).insert(Scoreboard {perfect:0, great:0, miss:0, bad:0,});
 }
 
 pub fn update_background_text(
@@ -957,7 +1094,8 @@ pub fn update_scoreboard(
         let (mut score_text, scoreboard) = score_query.single_mut();
         score_text.sections[1].value = scoreboard.perfect.to_string();
         score_text.sections[3].value = scoreboard.great.to_string();
-        score_text.sections[5].value = scoreboard.miss.to_string();
+        score_text.sections[5].value = scoreboard.bad.to_string();
+        score_text.sections[7].value = scoreboard.miss.to_string();
 }
 
 pub fn setup_accuracy(
@@ -980,7 +1118,6 @@ pub fn setup_accuracy(
 }
 
 pub fn update_accuracy(
-    mut commands: Commands,
     mut text_query: Query<(&mut Text, &AccuracyText)>,
     mut accuracy_query: Query<&mut TotalAccuracy>,
     scoreboard_query: Query<&Scoreboard>
@@ -1030,8 +1167,7 @@ pub fn spawn_combo_effect(
 */
 
 pub fn update_combo_effect(
-    mut commands: Commands,
-    mut combo_query: Query<(&mut Combo)>,
+    mut combo_query: Query<&mut Combo>,
     mut text_query: Query<(&mut Text, &ComboText)>,
     mut event_combo: EventReader<EventCombo>
 ) {
@@ -1064,7 +1200,7 @@ pub fn pause_game(
     mut commands: Commands,
     key_input: Res<Input<KeyCode>>,
     mut timer: Query<(Entity, &mut MusicTimer)>,
-    mut text: Query<(Entity, &PausedText)>,
+    text: Query<(Entity, &PausedText)>,
     materials: Res<NoteResource>
 ) {
     for (_entity, mut music_timer) in timer.iter_mut() {
@@ -1078,10 +1214,22 @@ pub fn pause_game(
             }).insert(PausedText);
         } else if key_input.just_pressed(KeyCode::Escape) && music_timer.timer.paused() {
             music_timer.timer.unpause();
-            for (entity, paused_text) in text.iter() {
+            for (entity, _paused_text) in text.iter() {
                 commands.entity(entity).despawn();
             }
         }
+    }
+}
+
+pub fn print_keyboard_event_system(
+    mut keyboard_input_events: EventReader<bevy::input::keyboard::KeyboardInput>,
+    music_timer: Query<&MusicTimer>,
+) {
+    for event in keyboard_input_events.iter() {
+        for timer in music_timer.iter() {
+            println!("Key Time: {}", timer.timer.elapsed_secs());
+        }
+        info!("{:?}", event);
     }
 }
 
@@ -1167,9 +1315,10 @@ fn parse_file_string(string: &String) -> Result<Note, &'static str> {
         press_key: Press4Key::First,
         timing: 0,
         release_timing: 0,
-        speed: 5., // 6.4? = 17.4?
+        speed: 17.4, // 6.4? = 17.4?
         pushed: false,
         missed: false,
+        judge: JudgeAccuracy::None,
     };
     //println!("parsed string: {}", string.trim());
     for c in string.chars() {
