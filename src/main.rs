@@ -44,8 +44,11 @@ fn camera_setup(mut commands: Commands) {
     */
     commands.spawn_bundle(Camera2dBundle::default());
 }
+
+/* 
 fn frame_limit(
     mut setting: ResMut<bevy_framepace::FramepacePlugin>
 ) {
     setting.framerate_limit = bevy_framepace::FramerateLimitParam::Manual(60);
 }
+*/

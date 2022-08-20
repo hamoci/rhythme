@@ -287,7 +287,6 @@ impl Plugin for NotePlugin {
     
                 .with_system(update_combo_effect)
     
-                .with_system(long_note_combo_system)
                 .with_system(pause_game)
                 /* Debug Only */
                 .with_system(print_keyboard_event_system)
@@ -441,14 +440,16 @@ fn spawn_note(
 ) {
     // -350 : Judgement line. (STANDARD_NOTE_SPEED * note.speed) = 1초에 움직이는 거리. 즉 생성할때 chart.notes[0].timing / 1000초만큼 이동해야 판정선에 닿도록 함
     // y가 530보다 큰 것은 생성하지 않음
-    let position_y: f32 = JUDGE_LINE + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs()) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+    let position_y: f32 = JUDGE_LINE + (((chart.notes[0].timing as f32) / 1000.) - timer.timer.elapsed_secs())
+     * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
 
     if position_y <= 530.{
         //println!("Note spawned");
         //println!("{}", position_y);
 
         if chart.notes[0].note_type == NoteType::Long {
-            let release_position: f32 = position_y + ((chart.notes[0].release_timing - chart.notes[0].timing) as f32 / 1000.) * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
+            let release_position: f32 = position_y + ((chart.notes[0].release_timing - chart.notes[0].timing) as f32 / 1000.)
+             * (STANDARD_NOTE_SPEED * chart.notes[0].speed);
             let mut position = Transform::from_translation(Vec3::new(position_x, position_y + (release_position - position_y) / 2., 3.));
             let scale = 1. + (1. / 30. * (release_position - position_y));
             let scale = Scale(scale);
@@ -550,29 +551,22 @@ fn despawn_note(
                     note.pushed = true;
                     note.judge = JudgeAccuracy::Great;
                     return (true, JudgeAccuracy::Great);
+                } else if note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() {
+                    score.miss += 1;
+                    note.missed = true;
+                    note.judge = JudgeAccuracy::Bad;
+                    println!("start miss {}", music_timer.timer.elapsed_secs());
+                    return (true, JudgeAccuracy::Miss);
                 }
             }
         }
-        /*
-        if note.note_type == NoteType::Short {
-            if note.timing as f32 / 1000. + 0.09  < music_timer.timer.elapsed_secs() {
-                commands.entity(entity).despawn();
-                score.miss += 1;
-                println!("miss {}", music_timer.timer.elapsed_secs());
-                return (true, JudgeAccuracy::Miss);
-            }
-        */
         //아예 안누르면 Short이든, Long이든 삭제. Short의 경우 release_timing과 timing이 동일
 
         if input_key.just_released(key_code) && note.note_type == NoteType::Long {
-            if (note.release_timing as f32 / 1000. + 0.04167 >= music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.04167 <= music_timer.timer.elapsed_secs()) {
+            if (note.release_timing as f32 / 1000. + 0.09 >= music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
                 score.perfect += 1;
                 commands.entity(entity).despawn();
                 return (true, JudgeAccuracy::Perfect);
-            } else if (note.release_timing as f32 / 1000. + 0.09  >= music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.09 <= music_timer.timer.elapsed_secs()) {
-                score.great += 1;
-                commands.entity(entity).despawn();
-                return (true, JudgeAccuracy::Great);
             } else if (note.missed == false) && (note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs()) && (note.release_timing as f32 / 1000. - 0.09 > music_timer.timer.elapsed_secs()){
                 note.judge = JudgeAccuracy::Bad;
                 score.miss += 1;
@@ -588,60 +582,29 @@ fn despawn_note(
                 //println!("timer: {}", lane_query.timer.elapsed_secs());
                 //TODO: 노트가 삭제되는 과정에 대한 개선 필요
                 lane_query.timer.tick(time.delta());
-                /*
-                let position = time.delta_seconds() * (STANDARD_NOTE_SPEED * note.speed);
-                transform.translation.y += position / 2.;
-                transform.scale.y -= transform.scale.y - position / ((note.release_timing - note.timing) as f32 * note.speed * STANDARD_NOTE_SPEED);
-                */
+                
+                let position = transform.clone();
+                let mut position = position.translation.y.clone();
+                let position_diff = time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
+                position += position_diff;
+                transform.translation.y = position;
+                
+                transform.scale.y = 
+
                 if lane_query.timer.just_finished() {
                     return (true, note.judge);
                 }
                 return (true, JudgeAccuracy::None);
             }
-            /* 이부분 필요없는듯?
-            //롱노트를 처음으로 누르는순간이 없었고, 그 이후에 계속 누르고 있을때의 동작
-            } else if (note.pushed == false || note.missed == true) && input_key.pressed(key_code) {
-                if lane_query.0.timer.just_finished() {
-                    score.bad += 1;
-                    return (true, JudgeAccuracy::Bad);
-                }
-                return (true, JudgeAccuracy::None);
-            } */
-
-            //롱노트 처음을 안누르는순간 일단 틀린걸로 취급
-            if note.timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() && (note.missed == false) && (note.pushed == false) {
-                score.miss += 1;
-                note.missed = true;
-                note.judge = JudgeAccuracy::Bad;
-                println!("start miss {}", music_timer.timer.elapsed_secs());
-                return (true, JudgeAccuracy::Miss);
-            }
-
         }
     }
-
-
     if note.release_timing as f32 / 1000. + 0.09 < music_timer.timer.elapsed_secs() {
         score.miss += 1;
         println!("end miss or short miss: {}", music_timer.timer.elapsed_secs());
         commands.entity(entity).despawn();
         return (true, JudgeAccuracy::Miss);
     }
-
     (false, JudgeAccuracy::Miss)
-}
-
-pub fn long_note_combo_system(
-    mut timer_query: Query<&mut LongNoteTimer>,
-    time: Res<Time>,
-    mut combo_query: Query<&mut Combo>,
-) {
-    for timer in timer_query.iter_mut() {
-        if timer.timer.just_finished() {
-            let mut combo = combo_query.single_mut();
-            combo.0 += 1;
-        }
-    }
 }
 
 //'Z'

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioSource};
+use bevy_kira_audio::{AudioApp, AudioChannel, AudioPlugin, AudioControl, AudioSource};
 use crate::{notes, state::GameState};
 
 
@@ -42,7 +42,7 @@ pub struct ChannelAudioState<T> {
     stopped: bool,
     paused: bool,
     loop_started: bool,
-    volume: f32,
+    volume: f64,
     _marker: std::marker::PhantomData<T>,
 }
 
