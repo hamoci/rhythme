@@ -583,13 +583,9 @@ fn despawn_note(
                 //TODO: 노트가 삭제되는 과정에 대한 개선 필요
                 lane_query.timer.tick(time.delta());
                 
-                let position = transform.clone();
-                let mut position = position.translation.y.clone();
                 let position_diff = time.delta_seconds() * STANDARD_NOTE_SPEED * note.speed;
-                position += position_diff;
-                transform.translation.y = position;
-                
-                transform.scale.y = 
+                transform.translation.y += position_diff / 2.;
+                transform.scale.y -= position_diff / 30.;
 
                 if lane_query.timer.just_finished() {
                     return (true, note.judge);
